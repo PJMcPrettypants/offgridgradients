@@ -4,12 +4,14 @@
   "description": "",
   "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack"
   },
   "author": "Joe Patrick Shellard",
   "license": "ISC",
   "dependencies": {
-    "d3-delaunay": "^5.3.0"
+    "d3-delaunay": "^5.3.0",
+    "d3-polygon": "^1.0.6"
   },
   "devDependencies": {
     "webpack": "^4.43.0",

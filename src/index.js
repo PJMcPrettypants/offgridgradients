@@ -2,6 +2,7 @@ import * as p5 from './libraries/p5.js';
 import {
   Delaunay
 } from "d3-delaunay";
+
 var sourceImage;
 
 var colPoints = new Array();
@@ -21,8 +22,6 @@ const sketch = (p) => {
     p.background(0);
     p.fill(128);
     p.rect(50, 50, 50, 50);
-    p.noStroke();
-
   }
   p.draw = function () {
 
@@ -37,18 +36,20 @@ const sketch = (p) => {
 
     for (let i = 0; i < colPoints.length; i++) {
       let v = colPoints[i];
-      //points.push(parseInt(v[0]));
-      //points.push(parseInt(v[1]));
-      points.push([parseInt(v[0]), parseInt(v[1]) ]);
+      points.push([parseInt(v[0]), parseInt(v[1])]);
     }
 
     var adelaunay = Delaunay.from(points);
 
     var triangles = adelaunay.triangles;
 
+    const bounds = [0, 0, 800, 800];
+
+    var avoronoi = adelaunay.voronoi(bounds);
+
     p.background(200);
 
-    console.log('colPoints[0][2] is ' + colPoints[0][2]);
+    p.noStroke();
 
     for (let t = 0; t < triangles.length; t += 3) {
 
@@ -56,16 +57,25 @@ const sketch = (p) => {
       var p1 = [adelaunay.points[triangles[t + 1] * 2], adelaunay.points[(triangles[t + 1] * 2) + 1]];
       var p2 = [adelaunay.points[triangles[t + 2] * 2], adelaunay.points[(triangles[t + 2] * 2) + 1]];
 
-      console.log('t is ' + t);
-      console.log('p0:' + p0 + ', p1:' + p1 + ', p2:' + p2);
-
       //just uses colour from first vertex
       var triFill = colPoints[triangles[t]][2];
 
-      console.log('triFill vt3: ' + triFill);
-
       p.fill(triFill[0], triFill[1], triFill[2]);
       p.triangle(p0[0], p0[1], p1[0], p1[1], p2[0], p2[1]);
+
+    }
+
+    for (let g of avoronoi.cellPolygons()) {
+
+      p.stroke(255);
+      p.noFill();
+      p.beginShape();
+
+      for (let n of g) {
+        p.vertex((n)[0], (n)[1]);
+      }
+
+      p.endShape();
 
     }
 
