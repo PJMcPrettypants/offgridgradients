@@ -41,43 +41,28 @@ const sketch = (p) => {
 
     var adelaunay = Delaunay.from(points);
 
-    var triangles = adelaunay.triangles;
-
     const bounds = [0, 0, 800, 800];
 
     var avoronoi = adelaunay.voronoi(bounds);
 
-    p.background(200);
+    for (let i = 0; i < colPoints.length; i++) {
 
-    p.noStroke();
+      var vorColor = colPoints[i][2];
+      p.fill(vorColor[0], vorColor[1], vorColor[2]);
+      p.stroke(vorColor[0], vorColor[1], vorColor[2]);
 
-    for (let t = 0; t < triangles.length; t += 3) {
-
-      var p0 = [adelaunay.points[triangles[t] * 2], adelaunay.points[(triangles[t] * 2) + 1]];
-      var p1 = [adelaunay.points[triangles[t + 1] * 2], adelaunay.points[(triangles[t + 1] * 2) + 1]];
-      var p2 = [adelaunay.points[triangles[t + 2] * 2], adelaunay.points[(triangles[t + 2] * 2) + 1]];
-
-      //just uses colour from first vertex
-      var triFill = colPoints[triangles[t]][2];
-
-      p.fill(triFill[0], triFill[1], triFill[2]);
-      p.triangle(p0[0], p0[1], p1[0], p1[1], p2[0], p2[1]);
-
-    }
-
-    for (let g of avoronoi.cellPolygons()) {
-
-      p.stroke(255);
-      p.noFill();
+      let cellPoly = avoronoi.cellPolygon(i);
+      
       p.beginShape();
 
-      for (let n of g) {
+      for (let n of cellPoly) {
         p.vertex((n)[0], (n)[1]);
       }
 
       p.endShape();
 
     }
+
 
   }
 
