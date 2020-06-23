@@ -22,6 +22,7 @@ const sketch = (p) => {
     p.background(0);
     p.fill(128);
     p.rect(50, 50, 50, 50);
+
   }
   p.draw = function () {
 
@@ -32,7 +33,7 @@ const sketch = (p) => {
     colPoints = [];
     points = [];
 
-    EdgeDetector.extractPoints(colPoints, sourceImage, p.mouseX, 1 + parseInt(p.mouseY / 10));
+    EdgeDetector.extractPoints(colPoints, sourceImage, parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
 
     for (let i = 0; i < colPoints.length; i++) {
       let v = colPoints[i];
@@ -52,7 +53,7 @@ const sketch = (p) => {
       p.stroke(vorColor[0], vorColor[1], vorColor[2]);
 
       let cellPoly = avoronoi.cellPolygon(i);
-      
+
       p.beginShape();
 
       for (let n of cellPoly) {
@@ -63,8 +64,69 @@ const sketch = (p) => {
 
     }
 
+    p.background(0);
+
+    p.loadPixels();
+
+    const strideV = 1;
+    var prevFound = 0;
+    const dt = p.pixelDensity();
+
+    var totalFindCellTime = 0;
+    var totalGetColourTime = 0;
+    var totalSetColourTime = 0;
+
+    for (let y = 0; y < p.height; y += strideV) {
+      for (let x = 0; x < p.width; x += strideV) {
+
+        const t0 = performance.now();
+        let foundCell = adelaunay.find(x, y, prevFound);
+        const t1 = performance.now();
+        totalFindCellTime += (t1 - t0);
+
+        prevFound = foundCell;
+
+        //ADD: if cell different from previous, get neighbours
+        //work out distances to neighbours
+
+        const t3 = performance.now();
+        const foundColor = colPoints[foundCell][2];
+        const t4 = performance.now();
+        totalGetColourTime += (t4 - t3);
+
+        const t5 = performance.now();
+
+        for (let i = 0; i < dt; i++) {
+          for (let j = 0; j < dt; j++) {
+            // loop over
+            let pixIndex = 4 * ((y * dt + j) * p.width * dt + (x * dt + i));
+            p.pixels[pixIndex] = foundColor[0]; //r
+            p.pixels[pixIndex + 1] = foundColor[1]; //g
+            p.pixels[pixIndex + 2] = foundColor[2]; //b
+            p.pixels[pixIndex + 3] = 255; //a
+          }
+        }
+
+
+        const t6 = performance.now();
+        totalSetColourTime += (t6 - t5);
+
+      }
+    }
+
+    console.log(`Finding cells took ${totalFindCellTime} milliseconds.`);
+    console.log(`Getting colours took ${totalGetColourTime} milliseconds.`);
+    console.log(`Setting pixels took ${totalSetColourTime} milliseconds.`);
+
+    p.updatePixels();
+
+
+
 
   }
+
+
+
 
   //Sobel/Scharr Edge Detector
 
