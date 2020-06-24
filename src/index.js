@@ -5,8 +5,10 @@ import {
 
 var sourceImage;
 
-var colPoints = new Array();
-var points = new Array();
+var colPoints = [];
+var points = [];
+var vorCellPix = [];
+
 
 const containerElement = document.getElementById('p5-container');
 
@@ -30,8 +32,12 @@ const sketch = (p) => {
 
   p.mouseClicked = function () {
 
+    //clear arrays
     colPoints = [];
     points = [];
+    vorCellPix = [];
+
+
 
     EdgeDetector.extractPoints(colPoints, sourceImage, parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
 
@@ -39,6 +45,9 @@ const sketch = (p) => {
       let v = colPoints[i];
       points.push([parseInt(v[0]), parseInt(v[1])]);
     }
+
+    //console.log('points is: ');
+    //console.log(points);
 
     var adelaunay = Delaunay.from(points);
 
@@ -64,11 +73,11 @@ const sketch = (p) => {
 
     }
 
-    p.background(0);
+    //p.background(0);
 
-    p.loadPixels();
+    //p.loadPixels();
 
-    const strideV = 1;
+    const strideVC = 1;
     var prevFound = 0;
     const dt = p.pixelDensity();
 
@@ -76,8 +85,9 @@ const sketch = (p) => {
     var totalGetColourTime = 0;
     var totalSetColourTime = 0;
 
-    for (let y = 0; y < p.height; y += strideV) {
-      for (let x = 0; x < p.width; x += strideV) {
+    //loop to fill array with cell indices for each pixel
+    for (let y = 0; y < p.height; y += strideVC) {
+      for (let x = 0; x < p.width; x += strideVC) {
 
         const t0 = performance.now();
         let foundCell = adelaunay.find(x, y, prevFound);
@@ -86,15 +96,74 @@ const sketch = (p) => {
 
         prevFound = foundCell;
 
-        //ADD: if cell different from previous, get neighbours
-        //work out distances to neighbours
+        vorCellPix.push(foundCell);
+
+      }
+    }
+
+    const strideVP = 8;
+    p.noStroke();
+
+    //loop again to create voronoi for each pixel
+    for (let y = 0; y < p.height; y += strideVP) {
+      for (let x = 0; x < p.width; x += strideVP) {
+
 
         const t3 = performance.now();
-        const foundColor = colPoints[foundCell][2];
+        const pixIndex = ((y * p.width) + x);
+        const foundColor = colPoints[vorCellPix[pixIndex]][2];
         const t4 = performance.now();
         totalGetColourTime += (t4 - t3);
-
         const t5 = performance.now();
+
+        let insertedPoints = points.slice();
+        insertedPoints.push([x, y]);
+        let insertedDelaunay = Delaunay.from(insertedPoints);
+
+        //could be speeded up by reducing bounds?
+        let insertedVoronoi = insertedDelaunay.voronoi(bounds);
+
+        let insertedPoly = insertedVoronoi.cellPolygon(insertedPoints.length - 1);
+
+        //handle if polygon array is null
+        if (insertedPoly) {  
+          //handle if polygon array exists but is empty
+          if (typeof insertedPoly[0][0] == 'undefined') {
+            insertedPoly = insertedVoronoi.cellPolygon(vorCellPix[pixIndex]);
+          }
+        } else {
+          insertedPoly = insertedVoronoi.cellPolygon(vorCellPix[pixIndex]);
+        }
+
+
+
+
+
+        //TODO
+        //find area of insterted polygon
+        //find neighbours
+        //for each neighbour
+        //find colour
+        //find polygon
+        //find intersection of polygon with inserted
+        //find ratio of intersection
+        //multiply ratio by each color component
+        //add colour components to total
+
+
+
+        p.fill(foundColor[0], foundColor[1], foundColor[2], 16);
+        //p.stroke(foundColor[0], foundColor[1], foundColor[2]);
+
+
+        p.beginShape();
+        //console.log(`drawing inserted shape`);
+        for (let n of insertedPoly) {
+          p.vertex((n)[0], (n)[1]);
+        }
+
+        p.endShape();
+
 
         for (let i = 0; i < dt; i++) {
           for (let j = 0; j < dt; j++) {
@@ -114,11 +183,11 @@ const sketch = (p) => {
       }
     }
 
-    console.log(`Finding cells took ${totalFindCellTime} milliseconds.`);
-    console.log(`Getting colours took ${totalGetColourTime} milliseconds.`);
-    console.log(`Setting pixels took ${totalSetColourTime} milliseconds.`);
+    console.log(`Finding cells took ${totalFindCellTime} milliseconds`);
+    console.log(`Getting colours took ${totalGetColourTime} milliseconds`);
+    console.log(`Setting pixels took ${totalSetColourTime} milliseconds`);
 
-    p.updatePixels();
+    //p.updatePixels();
 
 
 
@@ -179,8 +248,7 @@ const sketch = (p) => {
         }
       }
 
-      //console.log(`colpoints is: ${colPoints}`);
-      console.log('colpoints is: ' + colPoints);
+      //console.log('colpoints is: ' + colPoints);
 
     }
 
