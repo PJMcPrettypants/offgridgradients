@@ -2,13 +2,17 @@ import * as p5 from './libraries/p5.js';
 import {
   Delaunay
 } from "d3-delaunay";
+import {
+  polygon
+} from 'polygon-tools';
 
 var sourceImage;
 
+//colPoints is the most important array, it stores image data as point positions alongside corresponding colours [x,y,[r,g,b]] 
 var colPoints = [];
-var points = [];
-var vorCellPix = [];
 
+//points array is the point positions only [x,y], extracted for feeding into d3-delaunay, but with indexes matching
+var points = [];
 
 const containerElement = document.getElementById('p5-container');
 
@@ -16,7 +20,6 @@ const sketch = (p) => {
 
   p.preload = function () {
     sourceImage = p.loadImage('assets/r.jpg');
-
   }
 
   p.setup = function () {
@@ -24,7 +27,6 @@ const sketch = (p) => {
     p.background(0);
     p.fill(128);
     p.rect(50, 50, 50, 50);
-
   }
   p.draw = function () {
 
@@ -35,9 +37,6 @@ const sketch = (p) => {
     //clear arrays
     colPoints = [];
     points = [];
-    vorCellPix = [];
-
-
 
     EdgeDetector.extractPoints(colPoints, sourceImage, parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
 
@@ -46,14 +45,11 @@ const sketch = (p) => {
       points.push([parseInt(v[0]), parseInt(v[1])]);
     }
 
-    //console.log('points is: ');
-    //console.log(points);
-
-    var adelaunay = Delaunay.from(points);
+    var aDelaunay = Delaunay.from(points);
 
     const bounds = [0, 0, 800, 800];
 
-    var avoronoi = adelaunay.voronoi(bounds);
+    var aVoronoi = aDelaunay.voronoi(bounds);
 
     for (let i = 0; i < colPoints.length; i++) {
 
@@ -61,60 +57,20 @@ const sketch = (p) => {
       p.fill(vorColor[0], vorColor[1], vorColor[2]);
       p.stroke(vorColor[0], vorColor[1], vorColor[2]);
 
-      let cellPoly = avoronoi.cellPolygon(i);
+      let cellPoly = aVoronoi.cellPolygon(i);
 
-      p.beginShape();
-
-      for (let n of cellPoly) {
-        p.vertex((n)[0], (n)[1]);
-      }
-
-      p.endShape();
+      drawPolygon(cellPoly);
 
     }
 
     //p.background(0);
 
-    //p.loadPixels();
-
-    const strideVC = 1;
-    var prevFound = 0;
-    const dt = p.pixelDensity();
-
-    var totalFindCellTime = 0;
-    var totalGetColourTime = 0;
-    var totalSetColourTime = 0;
-
-    //loop to fill array with cell indices for each pixel
-    for (let y = 0; y < p.height; y += strideVC) {
-      for (let x = 0; x < p.width; x += strideVC) {
-
-        const t0 = performance.now();
-        let foundCell = adelaunay.find(x, y, prevFound);
-        const t1 = performance.now();
-        totalFindCellTime += (t1 - t0);
-
-        prevFound = foundCell;
-
-        vorCellPix.push(foundCell);
-
-      }
-    }
-
-    const strideVP = 8;
+    const strideVP = 5;
     p.noStroke();
 
-    //loop again to create voronoi for each pixel
+    //loop to create voronoi for each pixel
     for (let y = 0; y < p.height; y += strideVP) {
       for (let x = 0; x < p.width; x += strideVP) {
-
-
-        const t3 = performance.now();
-        const pixIndex = ((y * p.width) + x);
-        const foundColor = colPoints[vorCellPix[pixIndex]][2];
-        const t4 = performance.now();
-        totalGetColourTime += (t4 - t3);
-        const t5 = performance.now();
 
         let insertedPoints = points.slice();
         insertedPoints.push([x, y]);
@@ -125,46 +81,99 @@ const sketch = (p) => {
 
         let insertedPoly = insertedVoronoi.cellPolygon(insertedPoints.length - 1);
 
-        //handle if polygon array is null
-        if (insertedPoly) {  
-          //handle if polygon array exists but is empty
+        //If new inserted polygon array is null or undefined, get poly by index to original delaunay cell for this point
+        if (insertedPoly) {
+
           if (typeof insertedPoly[0][0] == 'undefined') {
-            insertedPoly = insertedVoronoi.cellPolygon(vorCellPix[pixIndex]);
+            insertedPoly = insertedVoronoi.cellPolygon(aDelaunay.find(x, y));
           }
         } else {
-          insertedPoly = insertedVoronoi.cellPolygon(vorCellPix[pixIndex]);
+          insertedPoly = insertedVoronoi.cellPolygon(aDelaunay.find(x, y));
         }
 
+        const insertedPolyArea = (polygon.area(insertedPoly));
 
-
-
-
-        //TODO
-        //find area of insterted polygon
-        //find neighbours
-        //for each neighbour
-        //find colour
-        //find polygon
-        //find intersection of polygon with inserted
-        //find ratio of intersection
-        //multiply ratio by each color component
-        //add colour components to total
-
-
-
-        p.fill(foundColor[0], foundColor[1], foundColor[2], 16);
-        //p.stroke(foundColor[0], foundColor[1], foundColor[2]);
-
-
-        p.beginShape();
-        //console.log(`drawing inserted shape`);
-        for (let n of insertedPoly) {
-          p.vertex((n)[0], (n)[1]);
+        if ((x == 400) && (y == 400)) {
+          console.log(`insertedPolyArea:`);
+          console.log(insertedPolyArea);
         }
 
-        p.endShape();
+        let weightedColor = [0, 0, 0];
+        let relativeWeight = 0;
+        let totalWeight = 0;
+
+        for (let n of insertedVoronoi.neighbors(insertedPoints.length - 1)) {
+
+          let neighborPoly = aVoronoi.cellPolygon(n);
+
+          if ((x == 400) && (y == 400)) {
+            console.log(`n:`);
+            console.log(n);
+            console.log(`neighborPoly:`);
+            console.log(neighborPoly);
+          }
+
+          let neighborColor = colPoints[n][2];
+
+          let intersectionPoly;
+          let intersectionArea = 0;
+          const intersectionPolyArray = polygon.intersection(insertedPoly, neighborPoly);
+
+          if (intersectionPolyArray) {
+            if (intersectionPolyArray[0]) {
+              intersectionPoly = intersectionPolyArray[0];
+              intersectionArea = polygon.area(intersectionPoly);
+              if ((x == 400) && (y == 400)) {
+                console.log(`intersectionPoly: `);
+                console.log(intersectionPoly);
+              }
+            }
+          }
+          relativeWeight = intersectionArea / insertedPolyArea;
+
+          if ((x == 400) && (y == 400)) {
+            console.log(`intersectionArea: `);
+            console.log(intersectionArea);
+            console.log(`relativeWeight: `);
+            console.log(relativeWeight);
+          }
+
+          weightedColor[0] = weightedColor[0] + (neighborColor[0] * relativeWeight);
+          weightedColor[1] = weightedColor[1] + (neighborColor[1] * relativeWeight);
+          weightedColor[2] = weightedColor[2] + (neighborColor[2] * relativeWeight);
+
+          totalWeight += relativeWeight;
+
+          //check polygon array isn't null or undefined
+          if (intersectionPoly) {
+            if (intersectionPoly[0]) {
+              if (intersectionPoly[0][0]) {
+                //console.log(`intersectionPoly[0][0]: `);
+                //console.log(intersectionPoly[0][0]);
+                //p.stroke(255, 0, 0, 128);
+                //p.fill(neighborColor[0], neighborColor[1], neighborColor[2]);
+                //drawPolygon(intersectionPoly);
+              }
+            }
+          }
 
 
+        }
+
+        if ((x == 400) && (y == 400)) {
+          console.log(`totalWeight :`);
+          console.log(totalWeight);
+          console.log(`weightedColor:`);
+          console.log(weightedColor);
+
+        }
+
+        p.noStroke(0, 0, 255);
+        p.fill(weightedColor[0], weightedColor[1], weightedColor[2]);
+        drawPolygon(insertedPoly);
+
+/* 
+        const dt = p.pixelDensity();
         for (let i = 0; i < dt; i++) {
           for (let j = 0; j < dt; j++) {
             // loop over
@@ -174,28 +183,12 @@ const sketch = (p) => {
             p.pixels[pixIndex + 2] = foundColor[2]; //b
             p.pixels[pixIndex + 3] = 255; //a
           }
-        }
-
-
-        const t6 = performance.now();
-        totalSetColourTime += (t6 - t5);
+        } */
 
       }
     }
 
-    console.log(`Finding cells took ${totalFindCellTime} milliseconds`);
-    console.log(`Getting colours took ${totalGetColourTime} milliseconds`);
-    console.log(`Setting pixels took ${totalSetColourTime} milliseconds`);
-
-    //p.updatePixels();
-
-
-
-
   }
-
-
-
 
   //Sobel/Scharr Edge Detector
 
@@ -253,6 +246,16 @@ const sketch = (p) => {
     }
 
   }
+
+  function drawPolygon(drawPolyArray) {
+    //takes an array of 2d points arrays [[x,y][x,y][x,y]...]
+    p.beginShape();
+    for (let v of drawPolyArray) {
+      p.vertex((v)[0], (v)[1]);
+    }
+    p.endShape();
+  }
+
 
 };
 
