@@ -5,10 +5,8 @@ import {
 import {
   polygon
 } from 'polygon-tools';
-import {
-  logToLin,
-  linToLog
-} from 'srgb-logarithmic-and-linear-colour-conversion';
+import {findPoints} from './pointfinder.js';
+import {makeImageLinear, sRGBtoLinear, linearTosRGB} from './linlogimageconvert.js';
 
 
 var sourceImage;
@@ -50,15 +48,21 @@ const sketch = (p) => {
     //clear arrays
     colPoints = [];
     points = [];
-    var linearImage = [];
+    linearImage = [];
 
-    if (!imageMadeLinear) makeImageLinear();
+    let copiedImage = [];
+    sourceImage.loadPixels();
+    for(let px = 0; px < (sourceImage.width * sourceImage.height * 4); px++){
+      copiedImage.push(sourceImage.pixels[px]);
+    }
+    
+    if (!imageMadeLinear){
+      linearImage = makeImageLinear(copiedImage, sourceImage.width, sourceImage.height);
+      imageMadeLinear = true;
+    }
+ 
 
-    EdgeDetector.extractPoints(colPoints, sourceImage, parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
-
-    //makeLinearImagesRGB();
-
-    //p.image(sourceImage, 0, 0);
+    colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
 
     console.log(colPoints.length + " points");
 
@@ -248,100 +252,11 @@ const sketch = (p) => {
 
       }
 
-      if (y % 10 == 0) p.updatePixels();
+    
     }
     p.updatePixels();
 
 
-  }
-
-  //Sobel/Scharr Edge Detector
-
-  let EdgeDetector = {
-
-    extractPoints: function (colPoints, img, threshold, stride) {
-
-      console.log("threshold:" + threshold);
-      console.log("stride :" + stride);
-
-      var colR = 0;
-      var colG = 0;
-      var colB = 0;
-      var colGrey = 0;
-
-      var colSum = 0;
-      const W = img.width - 1;
-      const H = img.height - 1;
-
-      const kernel = [
-        [6, 10, 0],
-        [10, 0, -10],
-        [0, -10, -6]
-
-      ];
-
-        for (let Y = 1; Y < H; Y += stride) {
-        for (let X = 1; X < W; X += stride) {
-
-          for (let y = -1; y <= 1; y++) {
-            for (let x = -1; x <= 1; x++) {
-
-              colR = linearImage[4 * (((Y + y) * img.width) + (X + x))];
-              colG = linearImage[4 * (((Y + y) * img.width) + (X + x)) + 1];
-              colB = linearImage[4 * (((Y + y) * img.width) + (X + x)) + 2];
-              //colGrey = colR + colG + colB;
-              colGrey = 255 * (colR + colG + colB);
-              colSum += kernel[x + 1][y + 1] * colGrey;
-            }
-          }
-          if (Math.abs(colSum) > threshold) {
-
-            colR = linearImage[4 * ((Y * img.width) + X)];
-            colG = linearImage[4 * ((Y * img.width) + X) + 1];
-            colB = linearImage[4 * ((Y * img.width) + X) + 2]; 
-            colPoints.push([X, Y, [colR, colG, colB]]);
-          }
-          colSum = 0;
-        }
-      }
-
-      //console.log('colpoints is: ' + colPoints);
-
-    }
-
-
-
-  }
-
-  function makeImageLinear(){
-    sourceImage.loadPixels();
-    for (let y = 0; y < sourceImage.height; y ++) {
-      for (let x = 0; x < sourceImage.width; x ++) {
-        let pixIndex =  4 * ((y * sourceImage.width) + x);
-        let linearColor = sRGBtoLinear([sourceImage.pixels[pixIndex], sourceImage.pixels[pixIndex + 1], sourceImage.pixels[pixIndex + 2]]);
-        linearImage[pixIndex] = linearColor[0]; //r
-        linearImage[pixIndex + 1] = linearColor[1]; //g
-        linearImage[pixIndex + 2] = linearColor[2]; //b
-      }
-    }
-    console.log("made linear image");
-    imageMadeLinear = true;
-  }
-
-  function makeLinearImagesRGB(){
-    sourceImage.loadPixels();
-    for (let y = 0; y < sourceImage.height; y ++) {
-      for (let x = 0; x < sourceImage.width; x ++) {
-        let pixIndex =  4 * ((y * sourceImage.width) + x);
-        let sRGBColor = linearTosRGB([sourceImage.pixels[pixIndex], sourceImage.pixels[pixIndex + 1], sourceImage.pixels[pixIndex + 2]]);
-        sourceImage.pixels[pixIndex] = sRGBColor[0]; //r
-        sourceImage.pixels[pixIndex + 1] = sRGBColor[1]; //g
-        sourceImage.pixels[pixIndex + 2] = sRGBColor[2]; //b
-      }
-    }
-    sourceImage.updatePixels();
-    console.log("used lin to log");
-    imageMadeLinear = true;
   }
 
   function drawPolygon(drawPolyArray) {
@@ -353,34 +268,7 @@ const sketch = (p) => {
     p.endShape();
   }
 
-
 };
-
-
-function sRGBtoLinear(sRGBArray) {
-  let linearArray = [];
-  for (let s8bit of sRGBArray) {
-    let linear = logToLin(s8bit);
-    // let linear;
-    // let s = s8bit/255;
-    // if (s <= 0.04045) linear = s / 12.92;
-    // else linear = Math.pow((s + 0.055) / 1.055, 2.4);
-    linearArray.push(linear);
-  }
-  return linearArray;
-}
-
-function linearTosRGB(linearArray) {
-  let sRGBArray = [];
-  for (let linear of linearArray) {
-    let s8bit = linToLog(linear);
-    // if (linear <= 0.0031308) s = linear * 12.92;
-    // else s = 1.055 * Math.pow(linear, 1.0/2.4) - 0.055;
-    // let s8bit = s * 255;
-    sRGBArray.push(s8bit);
-  }
-  return sRGBArray;
-}
 
 
 new p5(sketch, containerElement);
