@@ -5,27 +5,34 @@ import {
 import {
   polygon
 } from 'polygon-tools';
-import {findPoints} from './pointfinder.js';
-import {makeImageLinear, sRGBtoLinear, linearTosRGB} from './linlogimageconvert.js';
+import {
+  findPoints
+} from './pointfinder.js';
+import {
+  makeImageLinear,
+  sRGBtoLinear,
+  linearTosRGB
+} from './linlogimageconvert.js';
 
-
-var sourceImage;
-
-//colPoints is the most important array, it stores image data as point positions alongside corresponding colors [x,y,[r,g,b]] 
-var colPoints = [];
-
-//this is an array to store linear image data, as the p5.js image object stores 8 bit color
-var linearImage = [];
-
-//points array is the point positions only [x,y], extracted for feeding into d3-delaunay, but with indexes matching colPoints
-var points = [];
-
-const vorDebug = false;
-var imageMadeLinear = false;
 
 const containerElement = document.getElementById('p5-container');
 
 const sketch = (p) => {
+
+  let colPoints = []; //Stores image data as point positions alongside corresponding colors [x,y,[r,g,b]] 
+  let linearImage = []; //stores linear image, as the p5.js image object stores 8 bit color
+  let points = []; //points array is the point positions only [x,y], extracted for feeding into d3-delaunay, but with indexes matching colPoints
+
+  let bounds = [];
+  let dt; //density, detected in setup
+  let aDelaunay;
+  let aVoronoi;
+  let sourceImage;
+  let renderedImage;
+  const vorDebug = false;
+  let drawDelaunayState = false;
+  let drawVoronoiState = false;
+  let drawTestInsertState = false;
 
   p.preload = function () {
     sourceImage = p.loadImage('assets/r.jpg');
@@ -33,17 +40,50 @@ const sketch = (p) => {
 
   p.setup = function () {
     p.createCanvas(800, 800);
+    dt = p.pixelDensity();
+    bounds = [0, 0, p.width, p.height];
+    renderedImage = p.createImage(p.width, p.height);
     p.background(0);
     p.fill(128);
     p.rect(50, 50, 50, 50);
+    console.log('V: a');
   }
   p.draw = function () {
+
+    p.image(renderedImage, 0, 0);
+
+    if (drawDelaunayState) drawDelaunay();
+
+    if (drawVoronoiState) drawVoronoi();
+
+    if (drawTestInsertState == true) testInsert(p.mouseX, p.mouseY);
+
 
   }
 
   p.mouseClicked = function () {
 
-    const dt = p.pixelDensity();
+    randomPoints(p.width, p.height, 20);
+    //pointsFromImage(parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
+    calculateDelaunay();
+    let interpolationStride = 1;
+    createInterpolation(interpolationStride);
+
+  }
+
+  p.keyTyped = function () {
+    if (p.key === 'v') {
+      drawVoronoiState = !drawVoronoiState;
+    } else if (p.key === 'd') {
+      drawDelaunayState = !drawDelaunayState;
+    } else if (p.key === 'i') {
+      drawTestInsertState = !drawTestInsertState;
+    }
+    //to prevent any default behavior
+    return false;
+  }
+
+  function pointsFromImage(pointStride, pointThreshold) {
 
     //clear arrays
     colPoints = [];
@@ -52,30 +92,26 @@ const sketch = (p) => {
 
     let copiedImage = [];
     sourceImage.loadPixels();
-    for(let px = 0; px < (sourceImage.width * sourceImage.height * 4); px++){
+    for (let px = 0; px < (sourceImage.width * sourceImage.height * 4); px++) {
       copiedImage.push(sourceImage.pixels[px]);
     }
-    
-    if (!imageMadeLinear){
+
       linearImage = makeImageLinear(copiedImage, sourceImage.width, sourceImage.height);
-      imageMadeLinear = true;
-    }
- 
 
-    colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
-
+    colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, pointStride, pointThreshold);
     console.log(colPoints.length + " points");
+  }
+
+  function calculateDelaunay() {
 
     for (let i = 0; i < colPoints.length; i++) {
       let v = colPoints[i];
       points.push([parseInt(v[0]), parseInt(v[1])]);
     }
 
-    var aDelaunay = Delaunay.from(points);
+    aDelaunay = Delaunay.from(points);
 
-    const bounds = [0, 0, 800, 800];
-
-    var aVoronoi = aDelaunay.voronoi(bounds);
+    aVoronoi = aDelaunay.voronoi(bounds);
 
     for (let i = 0; i < colPoints.length; i++) {
 
@@ -90,11 +126,14 @@ const sketch = (p) => {
 
     }
 
+  }
+
+  function createInterpolation(strideVP) {
+
     //p.background(0);
 
-    p.loadPixels();
+    renderedImage.loadPixels();
 
-    const strideVP = 1;
     //p.noStroke();
     //p.stroke(255, 0, 0, 128);
     //loop to create voronoi for each pixel
@@ -234,29 +273,46 @@ const sketch = (p) => {
           //drawPolygon(insertedPoly);
         }
 
-        if ((x == 400) && (y == 400)) console.log(`weightedColor:` + weightedColor); 
+        if ((x == 400) && (y == 400)) console.log(`weightedColor:` + weightedColor);
         weightedColor = linearTosRGB(weightedColor);
-        if ((x == 400) && (y == 400)) console.log(`tosRGB weightedColor:` + weightedColor); 
+        if ((x == 400) && (y == 400)) console.log(`tosRGB weightedColor:` + weightedColor);
 
-        for (let i = 0; i < dt; i++) {
-          for (let j = 0; j < dt; j++) {
-            // loop over
-            let pixIndex = 4 * ((y * dt + j) * p.width * dt + (x * dt + i));
-
-            p.pixels[pixIndex] = weightedColor[0]; //r
-            p.pixels[pixIndex + 1] = weightedColor[1]; //g
-            p.pixels[pixIndex + 2] = weightedColor[2]; //b
-            //p.pixels[pixIndex + 3] = 255; //a
-          }
-        }
-
+        // for (let i = 0; i < dt; i++) {
+        //   for (let j = 0; j < dt; j++) {
+        //     // loop over
+        //     let pixIndex = 4 * ((y * dt + j) * p.width * dt + (x * dt + i));
+        //     renderedImage.pixels[pixIndex] = weightedColor[0]; //r
+        //     renderedImage.pixels[pixIndex + 1] = weightedColor[1]; //g
+        //     renderedImage.pixels[pixIndex + 2] = weightedColor[2]; //b
+        //     p.pixels[pixIndex + 3] = 255; //a
+        //   }
+        // }
+        renderedImage.set(x, y, p.color(weightedColor));
       }
-
-    
     }
-    p.updatePixels();
+    renderedImage.updatePixels();
+  }
 
+  function drawDelaunay() {
+    if (aDelaunay) {
+      p.stroke(255, 0, 0);
+      p.noFill();
+      for (let polyTri of aDelaunay.trianglePolygons()) {
+        drawPolygon(polyTri);
+      }
+    }
+  }
 
+  function drawVoronoi() {
+    if (aVoronoi) {
+      if (drawVoronoiState == true) {
+        p.stroke(0, 255, 0);
+        p.noFill();
+        for (let polyVor of aVoronoi.cellPolygons()) {
+          drawPolygon(polyVor);
+        }
+      }
+    }
   }
 
   function drawPolygon(drawPolyArray) {
@@ -266,6 +322,64 @@ const sketch = (p) => {
       p.vertex((v)[0], (v)[1]);
     }
     p.endShape();
+  }
+
+  function testInsert(x, y) {
+
+    if (points.length > 2) {
+
+      p.stroke(0, 0, 255);
+      p.noFill()
+
+      let insertedPoints = points.slice();
+      insertedPoints.push([x, y]);
+      let insertedDelaunay = Delaunay.from(insertedPoints);
+
+      //could be speeded up by reducing bounds?
+      let insertedVoronoi = insertedDelaunay.voronoi(bounds);
+
+      let insertedPoly = insertedVoronoi.cellPolygon(insertedPoints.length - 1);
+
+      let insertionFailed = false;
+
+      //If new inserted polygon array is null or undefined, get poly by index to original delaunay cell for this point
+      if (insertedPoly) {
+
+        if (typeof insertedPoly[0][0] == 'undefined') {
+          let foundCell = aDelaunay.find(x, y);
+          insertedPoly = insertedVoronoi.cellPolygon(foundCell);
+          insertionFailed = true;
+          p.stroke(255, 255, 0);
+        }
+      } else {
+        let foundCell = aDelaunay.find(x, y);
+        insertedPoly = insertedVoronoi.cellPolygon(foundCell);
+        insertionFailed = true;
+        p.stroke(0, 255, 255);
+      }
+
+
+      drawPolygon(insertedPoly);
+    }
+  }
+
+  function randomPoints(w, h, count) {
+
+    colPoints = [];
+
+    for (let i = 0; i < count; i++) {
+
+      let pointColor = [Math.random(), Math.random(), Math.random()];
+
+      let pointx = Math.random() * w;
+      let pointy = Math.random() * h;
+
+      colPoints.push([pointx, pointy, pointColor]);
+
+    }
+
+    console.log(`colPoints:`);
+    console.log(colPoints);
   }
 
 };
