@@ -32,6 +32,7 @@ const sketch = (p) => {
   const vorDebug = false;
   let drawDelaunayState = false;
   let drawVoronoiState = false;
+  let fillVoronoiState = false;
   let drawTestInsertState = false;
 
   p.preload = function () {
@@ -46,17 +47,20 @@ const sketch = (p) => {
     p.background(0);
     p.fill(128);
     p.rect(50, 50, 50, 50);
-    console.log('V: a');
   }
+  
   p.draw = function () {
 
     p.image(renderedImage, 0, 0);
 
     if (drawDelaunayState) drawDelaunay();
 
-    if (drawVoronoiState) drawVoronoi();
+    drawVoronoi();
 
-    if (drawTestInsertState == true) testInsert(p.mouseX, p.mouseY);
+    if (drawTestInsertState) testInsert(p.mouseX, p.mouseY);
+
+    console.log(`drawVoronoiState: ` + drawVoronoiState);
+    console.log(`fillVoronoiState: ` + fillVoronoiState)
 
 
   }
@@ -73,7 +77,9 @@ const sketch = (p) => {
 
   p.keyTyped = function () {
     if (p.key === 'v') {
-      drawVoronoiState = !drawVoronoiState;
+      if (fillVoronoiState) drawVoronoiState = !drawVoronoiState;
+      fillVoronoiState = !fillVoronoiState;
+
     } else if (p.key === 'd') {
       drawDelaunayState = !drawDelaunayState;
     } else if (p.key === 'i') {
@@ -96,7 +102,7 @@ const sketch = (p) => {
       copiedImage.push(sourceImage.pixels[px]);
     }
 
-      linearImage = makeImageLinear(copiedImage, sourceImage.width, sourceImage.height);
+    linearImage = makeImageLinear(copiedImage, sourceImage.width, sourceImage.height);
 
     colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, pointStride, pointThreshold);
     console.log(colPoints.length + " points");
@@ -113,18 +119,11 @@ const sketch = (p) => {
 
     aVoronoi = aDelaunay.voronoi(bounds);
 
-    for (let i = 0; i < colPoints.length; i++) {
-
-      var vorColor = colPoints[i][2];
-      p.fill(vorColor[0], vorColor[1], vorColor[2]);
-      //p.stroke(vorColor[0], vorColor[1], vorColor[2]);
-      p.stroke(255, 255, 0);
-
-      let cellPoly = aVoronoi.cellPolygon(i);
-
-      //drawPolygon(cellPoly);
-
-    }
+    // for (let i = 0; i < colPoints.length; i++) {
+    //   var vorColor = colPoints[i][2];
+    //   p.fill(vorColor[0], vorColor[1], vorColor[2]);
+    //   let cellPoly = aVoronoi.cellPolygon(i);
+    // }
 
   }
 
@@ -177,6 +176,8 @@ const sketch = (p) => {
         let weightedColor = [0, 0, 0];
         let totalWeight = 0;
 
+
+
         for (let n of insertedDelaunay.neighbors(insertedPoints.length - 1)) {
 
 
@@ -194,6 +195,8 @@ const sketch = (p) => {
 
           let intersectionPoly;
           let intersectionArea = 0;
+
+          //might be faster to compare areas in insertedDelaunay with original?
           const intersectionPolyArray = polygon.intersection(insertedPoly, neighborPoly);
 
           if (intersectionPolyArray) {
@@ -304,11 +307,26 @@ const sketch = (p) => {
   }
 
   function drawVoronoi() {
-    if (aVoronoi) {
-      if (drawVoronoiState == true) {
-        p.stroke(0, 255, 0);
-        p.noFill();
+    if (drawVoronoiState || fillVoronoiState) {
+      if (aVoronoi) {
+        if (drawVoronoiState) p.stroke(0, 255, 0);
+        if (!drawVoronoiState) p.noStroke();
+        if (!fillVoronoiState) p.noFill();
+
         for (let polyVor of aVoronoi.cellPolygons()) {
+          if (fillVoronoiState) {
+            // console.log(`polyVor.index:`);
+            // console.log(polyVor.index);
+            // console.log(`colPoints[polyVor.index]:`);
+            // console.log(colPoints[polyVor.index]);
+
+            let vorColor = linearTosRGB(colPoints[polyVor.index][2]);
+            // console.log(`vorColor:`);
+            // console.log(vorColor);
+
+
+            p.fill(vorColor[0], vorColor[1], vorColor[2]);
+          }
           drawPolygon(polyVor);
         }
       }
@@ -377,7 +395,6 @@ const sketch = (p) => {
       colPoints.push([pointx, pointy, pointColor]);
 
     }
-
     console.log(`colPoints:`);
     console.log(colPoints);
   }
