@@ -39,15 +39,20 @@ const sketch = (p) => {
   let drawVoronoiState = false;
   let fillVoronoiState = false;
   let drawTestInsertState = false;
+  let renderingNNState = false;
+
+  let renderNNCounter = 0;
+  let renderNNSteps = 50;
 
   p.preload = function () {
     sourceImage = p.loadImage('assets/r.jpg');
   }
 
   p.setup = function () {
+    console.log(`setup version: cleaned up + re-rendered`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
-    bounds = [0, 0, p.width, p.height];
+    bounds = [p.width * -1, p.height * -1, p.width * 2, p.height * 2];
     renderedNNImage = p.createImage(p.width, p.height);
     renderedDistImage = p.createImage(p.width, p.height);
     p.background(0);
@@ -67,8 +72,7 @@ const sketch = (p) => {
 
     if (drawTestInsertState) testInsert(p.mouseX, p.mouseY);
 
-    //console.log(`drawVoronoiState: ` + drawVoronoiState);
-    //console.log(`fillVoronoiState: ` + fillVoronoiState)
+    if (renderingNNState) createNNInterpolation(1);
   }
   // p.mouseClicked = function () {
   // }
@@ -90,20 +94,17 @@ const sketch = (p) => {
       console.log(`colPoints: `);
       console.log(colPoints);
     } else if (p.key === 'n') {
-      let interpolationStride = 1;
-      createNNInterpolation(interpolationStride);
+      renderingNNState = !renderingNNState;
     } else if (p.key === 'w') {
-      let interpolationStride = 1;
-      createDistInterpolation(interpolationStride);
-    } else if (p.key === 'm') {
       let interpolationStride = 1;
       createDistInterpolation(interpolationStride);
     } else if (p.key === 'j') {
       pointsFromImage(parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
     } else if (p.key === 'q') {
       calculateDelaunay();
-    }
-
+    } else if (p.key === 'b') {
+      circumcenterSubdivision();
+    } 
     //to prevent any default behavior
     return false;
   }
@@ -129,9 +130,11 @@ const sketch = (p) => {
 
   function calculateDelaunay() {
 
+    points = [];
+
     for (let i = 0; i < colPoints.length; i++) {
       let v = colPoints[i];
-      points.push([parseInt(v[0]), parseInt(v[1])]);
+      points.push([v[0], v[1]]);
     }
 
     aDelaunay = Delaunay.from(points);
@@ -144,27 +147,35 @@ const sketch = (p) => {
 
   function createNNInterpolation(strideVP) {
 
-    //p.background(0);
-
     renderedNNImage.loadPixels();
-
-    //p.noStroke();
-    //p.stroke(255, 0, 0, 128);
-    //loop to create voronoi for each pixel
 
     var prevFound = 0; //speed up finding cells
 
-    for (let y = 0; y < p.height; y += strideVP) {
+    let stepEnd = renderNNCounter + parseInt(p.height / renderNNSteps);
 
-      if (y % 100 == 0) console.log(`Natural neighbour rendering... y = ` + y);
+
+    for (let y = renderNNCounter;
+      (y < stepEnd) && (y < p.height); y += strideVP) {
+
+      if (vorDebug) console.log(`Natural neighbour rendering: ` + y);
+
       for (let x = 0; x < p.width; x += strideVP) {
 
-        let NNweightedColor = naturalNeighbourInterpolate(x, y, prevFound);
-
+        let NNweightedColor = linearTosRGB((naturalNeighbourInterpolate(x, y, prevFound)));
+        if (vorDebug) console.log(`Natural neighbour rendered: ` + x + `, ` + y);
         renderedNNImage.set(x, y, p.color(NNweightedColor));
       }
+      renderNNCounter = y;
+      if (y > p.height - 2){
+        renderingNNState = false;
+        renderNNCounter = 0;
+      } 
+      
+      
     }
     renderedNNImage.updatePixels();
+
+
   }
 
   function createDistInterpolation(strideVP) {
@@ -172,18 +183,13 @@ const sketch = (p) => {
     let prevFound = 0; //speed up finding cells
     for (let y = 0; y < p.height; y += strideVP) {
       for (let x = 0; x < p.width; x += strideVP) {
-        // console.log(`x loop started`);
         let foundCell = aDelaunay.find(x, y, prevFound);
         let cellPoly = aVoronoi.cellPolygon(foundCell);
         let cellPoint = colPoints[foundCell];
-        // console.log(`cellPoint:`);
-        // console.log(cellPoint);
         let distanceToCellPoint = p.dist(x, y, cellPoint[0], cellPoint[1]);
         //TODO: replace these with a function that works on infinite lines
         //find line from x,y to point (go 16,777,215 x as far in opposite direction?)
         let extendedLineEnd = lineExtend(cellPoint[0], cellPoint[1], x, y, 100000);
-        // console.log(`extendedLineEnd:`);
-        // console.log(extendedLineEnd);
         let nextV = 0;
         let intersectionPoint = false;
         for (let v = 0; v < cellPoly.length; v++) {
@@ -209,15 +215,29 @@ const sketch = (p) => {
 
   function circumcenterSubdivision() {
 
-    let lengthPreSubdiv = points.length;
+    console.log(`circumcenterSubdivision`);
 
-    for (c = 0; c < lengthPreSubdiv; c += 2) {
+    let prevFound = 0;
+
+    let subdivColPoints = [];
+
+    for (let c = 0; c < aVoronoi.circumcenters.length; c += 2) {
 
       let cx = aVoronoi.circumcenters[c];
       let cy = aVoronoi.circumcenters[c + 1];
 
+      let subdividedColor = naturalNeighbourInterpolate(cx, cy, prevFound);
 
+      if (vorDebug) console.log(`subdividedColor:`);
+      if (vorDebug) console.log(subdividedColor);
 
+      subdivColPoints.push([cx, cy, subdividedColor]);
+
+    }
+
+    for (let i = 0; i < subdivColPoints.length; i++) {
+
+      colPoints.push(subdivColPoints[i]);
     }
 
 
@@ -234,6 +254,10 @@ const sketch = (p) => {
 
     let insertedPoly = insertedVoronoi.cellPolygon(insertedPoints.length - 1);
 
+
+    if (vorDebug) console.log(`insertedPoly:`);
+    if (vorDebug) console.log(insertedPoly);
+
     let insertionFailed = false;
 
     //If new inserted polygon array is null or undefined, get poly by index to original delaunay cell for this point
@@ -244,7 +268,7 @@ const sketch = (p) => {
         insertedPoly = insertedVoronoi.cellPolygon(foundCell);
         insertionFailed = true;
         prevFound = foundCell;
-        if (vorDebug) p.stroke(0, 0, 255, 128);
+        if (vorDebug) console.log('undefined');
       }
     } else {
       let foundCell = aDelaunay.find(x, y, prevFound);
@@ -253,27 +277,58 @@ const sketch = (p) => {
       prevFound = foundCell;
     }
 
+    insertedPoly.pop(); //remove duplicate vertex
+
+    if (!insertedPoly) console.log(`no inserted poly`);
+
     const insertedPolyArea = (polygon.area(insertedPoly));
 
     let weightedColor = [0, 0, 0];
     let totalWeight = 0;
 
+    if (vorDebug) console.log('Neighbour loop ahead...');
+
     for (let n of insertedDelaunay.neighbors(insertedPoints.length - 1)) {
 
+      if (vorDebug) console.log('Neighbour loop starting');
+
+      if (vorDebug) console.log(`n: `);
+      if (vorDebug) console.log(n);
+
       let neighborPoly = aVoronoi.cellPolygon(n);
+      neighborPoly.pop();
+
+      let neighborPolyAfter = insertedVoronoi.cellPolygon(n);
+      neighborPolyAfter.pop();
 
       let intersectionPoly;
       let intersectionArea = 0;
 
-      //might be faster to compare areas in insertedDelaunay with original?
-      const intersectionPolyArray = polygon.intersection(insertedPoly, neighborPoly);
-
-      if (intersectionPolyArray) {
-        if (intersectionPolyArray[0]) {
-          intersectionPoly = intersectionPolyArray[0];
-          intersectionArea = polygon.area(intersectionPoly);
-        }
+      if (!neighborPoly) {
+        console.log(`no neighborPoly`);
       }
+
+      if (!neighborPolyAfter) {
+        console.log(`no neighborPolyAfter`);
+      }
+
+      if (vorDebug) console.log(`insertedPoly: `);
+      if (vorDebug) console.log(insertedPoly);
+
+      if (vorDebug) p.stroke(0, 0, 255);
+      if (vorDebug) drawPolygon(insertedPoly);
+
+      if (vorDebug) console.log(`neighborpoly: `);
+      if (vorDebug) console.log(neighborPoly);
+
+      if (vorDebug) p.stroke(255, 0, 0);
+      if (vorDebug) drawPolygon(neighborPoly);
+
+      //faster to compare areas of the reduced polygons in insertedDelaunay with original versions, rather than intersect
+      intersectionArea = polygon.area(neighborPoly) - polygon.area(neighborPolyAfter);
+
+      if (vorDebug) console.log('intersectionArea');
+      if (vorDebug) console.log('intersectionArea');
 
       if (intersectionArea > 0) {
         let relativeWeight = intersectionArea / insertedPolyArea;
@@ -287,7 +342,11 @@ const sketch = (p) => {
 
       }
 
+      if (vorDebug) console.log('Neighbour loop ending');
+
     }
+
+    if (vorDebug) console.log('Done neighbour loop');
 
     //if the inserted cell is the same as the original cell, or something else goes wrong, it won't overlap with its neighbours
 
@@ -319,17 +378,11 @@ const sketch = (p) => {
         p.stroke(255, 0, 0, 128);
       }
     }
-    if (!vorDebug) {
-      p.noStroke();
-      //p.fill(weightedColor[0], weightedColor[1], weightedColor[2]);
-      //drawPolygon(insertedPoly);
-    }
-    weightedColor = linearTosRGB(weightedColor);
-
     return weightedColor;
   }
 
   function drawDelaunay() {
+
     if (aDelaunay) {
       p.stroke(255, 0, 0);
       p.noFill();
@@ -340,6 +393,7 @@ const sketch = (p) => {
   }
 
   function drawVoronoi() {
+
     if (drawVoronoiState || fillVoronoiState) {
       if (aVoronoi) {
         if (drawVoronoiState) p.stroke(0, 255, 0);
@@ -347,16 +401,10 @@ const sketch = (p) => {
         if (!fillVoronoiState) p.noFill();
 
         for (let polyVor of aVoronoi.cellPolygons()) {
+
           if (fillVoronoiState) {
-            // console.log(`polyVor.index:`);
-            // console.log(polyVor.index);
-            // console.log(`colPoints[polyVor.index]:`);
-            // console.log(colPoints[polyVor.index]);
 
             let vorColor = linearTosRGB(colPoints[polyVor.index][2]);
-            // console.log(`vorColor:`);
-            // console.log(vorColor);
-
 
             p.fill(vorColor[0], vorColor[1], vorColor[2]);
           }
@@ -376,6 +424,8 @@ const sketch = (p) => {
   }
 
   function testInsert(x, y) {
+
+    console.log(`insert ` + x + `, ` + y);
 
     if (points.length > 2) {
 
@@ -411,6 +461,25 @@ const sketch = (p) => {
 
 
       drawPolygon(insertedPoly);
+
+      p.stroke(255, 255, 0);
+
+      if (!insertedPoly) console.log(`no inserted poly`);
+
+      for (let n of insertedDelaunay.neighbors(insertedPoints.length - 1)) {
+
+        let neighborPoly = aVoronoi.cellPolygon(n);
+
+        if (!neighborPoly) {
+          console.log(`no neighborPoly`);
+          console.log(`n: `);
+          console.log(n);
+
+        }
+
+        drawPolygon(neighborPoly);
+      }
+
     }
   }
 
