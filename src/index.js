@@ -44,15 +44,18 @@ const sketch = (p) => {
   let renderNNCounter = 0;
   let renderNNSteps = 50;
 
+  const decimalPlaces = 11; //rounding to prevent errors
+
   p.preload = function () {
     sourceImage = p.loadImage('assets/r.jpg');
   }
 
   p.setup = function () {
-    console.log(`setup version: cleaned up + re-rendered`)
+    console.log(`setup version: jittery`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
-    bounds = [p.width * -1, p.height * -1, p.width * 2, p.height * 2];
+    bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
+    //bounds = [p.width, p.height, p.width, p.height];
     renderedNNImage = p.createImage(p.width, p.height);
     renderedDistImage = p.createImage(p.width, p.height);
     p.background(0);
@@ -81,7 +84,6 @@ const sketch = (p) => {
     if (p.key === 'v') {
       if (fillVoronoiState) drawVoronoiState = !drawVoronoiState;
       fillVoronoiState = !fillVoronoiState;
-
     } else if (p.key === 'd') {
       drawDelaunayState = !drawDelaunayState;
     } else if (p.key === 'i') {
@@ -104,7 +106,10 @@ const sketch = (p) => {
       calculateDelaunay();
     } else if (p.key === 'b') {
       circumcenterSubdivision();
-    } 
+    } else if (p.key === 'p') {
+      logVoronoiPolys();
+    }
+
     //to prevent any default behavior
     return false;
   }
@@ -133,8 +138,15 @@ const sketch = (p) => {
     points = [];
 
     for (let i = 0; i < colPoints.length; i++) {
-      let v = colPoints[i];
-      points.push([v[0], v[1]]);
+      let inputPoint = colPoints[i];
+
+      //add jitter to x
+      inputPoint[0] = inputPoint[0] + ((Math.random() / 1000) - 0.0005);
+      //add jitter to y
+      inputPoint[1] = inputPoint[1] + ((Math.random() / 1000) - 0.0005);
+
+      points.push([inputPoint[0], inputPoint[1]]);
+
     }
 
     aDelaunay = Delaunay.from(points);
@@ -154,10 +166,9 @@ const sketch = (p) => {
     let stepEnd = renderNNCounter + parseInt(p.height / renderNNSteps);
 
 
-    for (let y = renderNNCounter;
-      (y < stepEnd) && (y < p.height); y += strideVP) {
+    for (let y = renderNNCounter; (y < (stepEnd - 1) ) && (y < p.height); y += strideVP) {
 
-      if (vorDebug) console.log(`Natural neighbour rendering: ` + y);
+      console.log(`Natural neighbour rendering: ` + y);
 
       for (let x = 0; x < p.width; x += strideVP) {
 
@@ -166,12 +177,12 @@ const sketch = (p) => {
         renderedNNImage.set(x, y, p.color(NNweightedColor));
       }
       renderNNCounter = y;
-      if (y > p.height - 2){
+      if (y > p.height - 2) {
         renderingNNState = false;
         renderNNCounter = 0;
-      } 
-      
-      
+      }
+
+
     }
     renderedNNImage.updatePixels();
 
@@ -223,8 +234,11 @@ const sketch = (p) => {
 
     for (let c = 0; c < aVoronoi.circumcenters.length; c += 2) {
 
-      let cx = aVoronoi.circumcenters[c];
-      let cy = aVoronoi.circumcenters[c + 1];
+      let cxLong = aVoronoi.circumcenters[c];
+      let cyLong = aVoronoi.circumcenters[c + 1];
+
+      let cx = parseFloat(cxLong.toFixed(decimalPlaces));
+      let cy = parseFloat(cyLong.toFixed(decimalPlaces));
 
       let subdividedColor = naturalNeighbourInterpolate(cx, cy, prevFound);
 
@@ -237,7 +251,7 @@ const sketch = (p) => {
 
     for (let i = 0; i < subdivColPoints.length; i++) {
 
-      colPoints.push(subdivColPoints[i]);
+      if (pointWontBeDuplicate(colPoints, subdivColPoints[i])) colPoints.push(subdivColPoints[i]);
     }
 
 
@@ -296,20 +310,27 @@ const sketch = (p) => {
       if (vorDebug) console.log(n);
 
       let neighborPoly = aVoronoi.cellPolygon(n);
-      neighborPoly.pop();
-
       let neighborPolyAfter = insertedVoronoi.cellPolygon(n);
-      neighborPolyAfter.pop();
 
-      let intersectionPoly;
       let intersectionArea = 0;
 
+      if (neighborPoly && neighborPolyAfter) {
+
+        neighborPoly.pop();
+        neighborPolyAfter.pop();
+
+        //faster to compare areas of the reduced polygons in insertedDelaunay with original versions, rather than intersect
+        intersectionArea = polygon.area(neighborPoly) - polygon.area(neighborPolyAfter);
+
+      }
+
+
       if (!neighborPoly) {
-        console.log(`no neighborPoly`);
+        console.log(`no neighborPoly at neighbour ` + n + ` of ` + x + `,` + y);
       }
 
       if (!neighborPolyAfter) {
-        console.log(`no neighborPolyAfter`);
+        console.log(`no neighborPolyAfter at neighbour ` + n + ` of ` + x + `,` + y);
       }
 
       if (vorDebug) console.log(`insertedPoly: `);
@@ -323,9 +344,6 @@ const sketch = (p) => {
 
       if (vorDebug) p.stroke(255, 0, 0);
       if (vorDebug) drawPolygon(neighborPoly);
-
-      //faster to compare areas of the reduced polygons in insertedDelaunay with original versions, rather than intersect
-      intersectionArea = polygon.area(neighborPoly) - polygon.area(neighborPolyAfter);
 
       if (vorDebug) console.log('intersectionArea');
       if (vorDebug) console.log('intersectionArea');
@@ -425,7 +443,7 @@ const sketch = (p) => {
 
   function testInsert(x, y) {
 
-    console.log(`insert ` + x + `, ` + y);
+
 
     if (points.length > 2) {
 
@@ -459,8 +477,11 @@ const sketch = (p) => {
         p.stroke(0, 255, 255);
       }
 
-
       drawPolygon(insertedPoly);
+
+      let currentCell = aDelaunay.find(x, y);
+
+      console.log(`insert ` + x + `,` + y + ` cell: ` + currentCell);
 
       p.stroke(255, 255, 0);
 
@@ -501,6 +522,16 @@ const sketch = (p) => {
     console.log(colPoints);
   }
 
+  function logVoronoiPolys() {
+
+    for (let polyVor of aVoronoi.cellPolygons()) {
+
+      console.log(polyVor);
+
+    }
+
+  }
+
   function savePointsToFile() {
     let JSONpoints = JSON.stringify(colPoints);
     p.save(JSONpoints, 'savedPoints.json');
@@ -518,7 +549,16 @@ const sketch = (p) => {
     console.log(jsonPoints);
     var as = JSON.parse(jsonPoints);
     for (let jp in as) {
-      colPoints.push(as[jp]);
+
+      let parsedColPoint = as[jp];
+
+      let cxLong = parsedColPoint[0];
+      let cyLong = parsedColPoint[1];
+
+      parsedColPoint[0] = parseFloat(cxLong.toFixed(decimalPlaces));
+      parsedColPoint[1] = parseFloat(cyLong.toFixed(decimalPlaces));
+
+      if (pointWontBeDuplicate(colPoints, parsedColPoint)) colPoints.push(parsedColPoint);
     }
   }
 
@@ -536,9 +576,16 @@ function lineExtend(ax, ay, bx, by, factor) {
   let cy = by + edy;
 
   return [cx, cy];
-
 }
 
+function pointWontBeDuplicate(colPointArray, newColPoint) {
+  for (const previousPoint of colPointArray) {
+    if ((previousPoint[0] == newColPoint[0]) && (previousPoint[1] == newColPoint[1])) {
+      return false;
+    }
+  }
+  return true;
+}
 
 
 
