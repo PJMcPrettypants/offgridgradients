@@ -44,7 +44,7 @@ const sketch = (p) => {
   let renderingNNState = false;
 
   let renderNNCounter = 0;
-  let renderNNSteps = 50;
+  let renderNNSteps = 20;
   let voronoiAreas = []; //cache of areas of voronoi cells
 
   let prevFound = 0; //speed up finding voronoi cells
@@ -55,10 +55,8 @@ const sketch = (p) => {
   let insertedDelaunay;
   let insertedVoronoi;
 
-  let timeToModifyPoints = 0;
-  let timeToUpdateDelaunay = 0;
-  let timeToUpdateVoronoi = 0;
   let timeToGetWeightsFromPolys = 0;
+  let timeToRenderNN = 0;
 
   const decimalPlaces = 11; //rounding to prevent errors
 
@@ -67,7 +65,7 @@ const sketch = (p) => {
   }
 
   p.setup = function () {
-    console.log(`setup version: NN faster`)
+    console.log(`setup version: faster again`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
@@ -113,6 +111,7 @@ const sketch = (p) => {
       console.log(colPoints);
     } else if (p.key === 'n') {
       renderingNNState = !renderingNNState;
+      timeToRenderNN = 0;
     } else if (p.key === 'o') {
       vorDebug = !vorDebug;
     } else if (p.key === 'j') {
@@ -170,44 +169,48 @@ const sketch = (p) => {
     aDelaunay = Delaunay.from(points);
     aVoronoi = aDelaunay.voronoi(bounds);
 
-    console.log(`calculated Delaunay`);
+    console.log(`calculated Delaunay, ` + points.length + ` points`);
 
   }
 
   function createNNInterpolation(strideVP) {
 
+    const tPreNNRender = performance.now();
+
     renderedNNImage.loadPixels();
 
     let stepEnd = renderNNCounter + parseInt(p.height / renderNNSteps);
+    console.log(`Natural neighbor rendering: ` + renderNNCounter);
 
     for (let y = renderNNCounter;
       (y < (stepEnd - 1)) && (y < p.height); y += strideVP) {
 
-      console.log(`Natural neighbour rendering: ` + y);
+
 
       for (let x = 0; x < p.width; x += strideVP) {
 
-        let NNweightedColor = linearTosRGB((naturalNeighbourInterpolate(x, y)));
-        if (vorDebug) console.log(`Natural neighbour rendered: ` + x + `, ` + y);
+        let NNweightedColor = linearTosRGB((naturalNeighborInterpolate(x, y)));
+        if (vorDebug) console.log(`Natural neighbor rendered: ` + x + `, ` + y);
         renderedNNImage.set(x, y, p.color(NNweightedColor));
       }
       renderNNCounter++;
       if (y > p.height - 2) {
         renderingNNState = false;
         renderNNCounter = 0;
-        readOutTimers();
       }
 
     }
     renderedNNImage.updatePixels();
+    const tPostNNRender = performance.now();
+    timeToRenderNN += (tPostNNRender - tPreNNRender);
+
+    if (renderingNNState == false) readOutTimers();
 
   }
 
   function circumcenterSubdivision() {
 
     console.log(`circumcenterSubdivision...`);
-
-    prevFound = 0;
 
     let subdivColPoints = [];
 
@@ -225,7 +228,7 @@ const sketch = (p) => {
         // if (vorDebug) console.log(`circ loop insertedDelaunay.points:`);
         // if (vorDebug) console.log(insertedDelaunay.points);
 
-        let subdividedColor = naturalNeighbourInterpolate(cxShort, cyShort);
+        let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort);
 
         if (vorDebug) console.log(`subdividedColor:`);
         if (vorDebug) console.log(subdividedColor);
@@ -245,51 +248,53 @@ const sketch = (p) => {
 
   }
 
-  function naturalNeighbourInterpolate(x, y) {
+  function naturalNeighborInterpolate(x, y) {
 
     let oldMiniIndexes = miniIndexes.slice();
+    let miniIndexesBefore = miniIndexes.length; //might not be needed?
 
-    //TODO: could be made faster by updating inserted Delaunay and checking for new neighbours?
+    //if there's already a mini Delaunay, try updating insertedVoronoi to check for new Neighbours
+    if (miniIndexesBefore > 0) {
+      if (vorDebug) console.log(`tried update`);
 
-    miniIndexes = [];
-    let foundMiniCell = aDelaunay.find(x, y, prevFound);
-    prevFound = foundMiniCell;
-    miniIndexes.push(foundMiniCell);
-    for (let n of aDelaunay.neighbors(foundMiniCell)) {
-      miniIndexes.push(n);
-    }
+      insertedDelaunay.points[insertedDelaunay.points.length - 2] = x;
+      insertedDelaunay.points[insertedDelaunay.points.length - 1] = y;
+      insertedVoronoi.update();
+      addNeighborsNeighbors();
+    } else if (vorDebug) console.log(`didn't try update`);
 
-    let miniIndexesBefore = miniIndexes.length;
-    if (vorDebug) console.log(`about to enter do while loop`);
-    do {
+    //if there are new neighbours, OR no mini Delaunay, start a new mini Delaunay
+    if ((miniIndexes.length > miniIndexesBefore) || (miniIndexesBefore < 1)) {
+      if (vorDebug) console.log(`didn't skip new Delaunay`)
+
+      miniIndexes = [];
+      let foundMiniCell = aDelaunay.find(x, y, prevFound);
+      prevFound = foundMiniCell;
+      miniIndexes.push(foundMiniCell);
+      for (let n of aDelaunay.neighbors(foundMiniCell)) {
+        miniIndexes.push(n);
+      }
+
       miniIndexesBefore = miniIndexes.length;
-      //make mini Voronoi, taking point co-ordinates from main Voronoi plus new inserted point x,y
-      let NNPoints = [];
-      for (let c of miniIndexes) {
-        NNPoints.push(points[c]);
-      }
-      NNPoints.push([x, y]);
-      insertedDelaunay = Delaunay.from(NNPoints);
-      if (vorDebug) logInsertedDelaunay();
-      //find neighbouring cells of inserted cell in miniVoronoi
-      for (let n of insertedDelaunay.neighbors(NNPoints.length - 1)) {
-        // and add all the neighbour's neighbours from main voronoi to the mini voronoi...
-        for (let nn of aDelaunay.neighbors(miniIndexes[n])) {
-          //...if they haven't been included already
-          if (!miniIndexes.includes(nn)) {
-            miniIndexes.push(nn);
-          }
+      if (vorDebug) console.log(`about to enter do while loop`);
+      do {
+        miniIndexesBefore = miniIndexes.length;
+        //make mini Voronoi, taking point co-ordinates from main Voronoi plus new inserted point x,y
+        let NNPoints = [];
+        for (let c of miniIndexes) {
+          NNPoints.push(points[c]);
         }
-      }
-    } while (miniIndexes.length > miniIndexesBefore); //loop if new neighbour's neighbours added
-    //if the newly added neighbour's neighbours also turn out to be 1st degree neighbours of inserted cell
-    //then their neighbours will be added on the next loop, until no new neighbour's neighbours can be found
-    if (vorDebug) console.log(`done do while loop`);
+        NNPoints.push([x, y]);
+        insertedDelaunay = Delaunay.from(NNPoints);
 
-    insertedVoronoi = insertedDelaunay.voronoi(bounds);
+        addNeighborsNeighbors();
 
-    if (!(miniIndexes.length === oldMiniIndexes.length && miniIndexes.every((value, index) => value === oldMiniIndexes[index]))) {
-      if (vorDebug) console.log(`not skipped`);
+      } while (miniIndexes.length > miniIndexesBefore); //loop if new neighbor's neighbors added
+      //If the newly added neighbor's neighbors also turn out to be 1st degree neighbors of inserted cell
+      //then their neighbors will be added on the next loop, until no new neighbor's neighbors can be found
+      if (vorDebug) console.log(`done do while loop`);
+
+      insertedVoronoi = insertedDelaunay.voronoi(bounds);
       let miniPoints = [];
       voronoiAreas = [];
       for (let c of miniIndexes) {
@@ -303,7 +308,8 @@ const sketch = (p) => {
         let miniPolyVorArea = polygon.area(miniPolyVor);
         voronoiAreas.push(miniPolyVorArea);
       }
-    } else if (vorDebug) console.log(`skipped new mini`);
+
+    } else if (vorDebug) console.log(`skipped new Delaunay`);
 
     const tPrePolyWeight = performance.now();
 
@@ -314,23 +320,13 @@ const sketch = (p) => {
 
     let insertionFailed = false;
 
-    //If new inserted polygon array is null or undefined, 
+    //If new inserted polygon array is null or undefined, log it
     //formerly got poly by index to original delaunay cell for this point
     if (insertedPoly) {
-
       if (typeof insertedPoly[0][0] == 'undefined') {
-        // let foundCell = aDelaunay.find(x, y, prevFound);
-        // insertedPoly = insertedVoronoi.cellPolygon(foundCell);
-        // insertionFailed = true;
-        // prevFound = foundCell;
-        //if (vorDebug) console.log('undefined');
         console.log('undefined');
       }
     } else {
-      // let foundCell = aDelaunay.find(x, y, prevFound);
-      // insertedPoly = insertedVoronoi.cellPolygon(foundCell);
-      // insertionFailed = true;
-      // prevFound = foundCell;
       if (vorDebug) console.log('!insertedPoly');
     }
 
@@ -343,11 +339,11 @@ const sketch = (p) => {
     let weightedColor = [0, 0, 0];
     let totalWeight = 0;
 
-    if (vorDebug) console.log('Neighbour loop ahead...');
+    if (vorDebug) console.log('Neighbor loop ahead...');
 
     for (let n of insertedDelaunay.neighbors(miniIndexes.length)) {
 
-      if (vorDebug) console.log('Neighbour loop starting');
+      if (vorDebug) console.log('Neighbor loop starting');
 
       if (vorDebug) console.log(`n: `);
       if (vorDebug) console.log(n);
@@ -369,7 +365,7 @@ const sketch = (p) => {
 
 
       if (!neighborPolyAfter) {
-        console.log(`no neighborPolyAfter at neighbour ` + n + ` of ` + x + `,` + y + ` , should be at ` + points[n]);
+        console.log(`no neighborPolyAfter at neighbor ` + n + ` of ` + x + `,` + y + ` , should be at ` + points[n]);
       }
 
       if (vorDebug) console.log(`insertedPoly: `);
@@ -380,7 +376,7 @@ const sketch = (p) => {
 
       if (intersectionArea > 0) {
         let relativeWeight = intersectionArea / insertedPolyArea;
-        //n is the neighbour's index in insertedVoronoi, miniIndexes[n] has the index to original colPoints
+        //n is the neighbor's index in insertedVoronoi, miniIndexes[n] has the index to original colPoints
         let neighborColor = colPoints[miniIndexes[n]][2];
         weightedColor[0] = weightedColor[0] + (neighborColor[0] * relativeWeight);
         weightedColor[1] = weightedColor[1] + (neighborColor[1] * relativeWeight);
@@ -390,13 +386,13 @@ const sketch = (p) => {
 
       }
 
-      if (vorDebug) console.log('Neighbour loop ending');
+      if (vorDebug) console.log('Neighbor loop ending');
 
     }
 
-    if (vorDebug) console.log('Done neighbour loop');
+    if (vorDebug) console.log('Done neighbor loop');
 
-    //if the inserted cell is the same as the original cell, or something else goes wrong, it won't overlap with its neighbours
+    //if the inserted cell is the same as the original cell, or something else goes wrong, it won't overlap with its neighbors
 
     if (totalWeight < 1.0) {
       const remainingWeight = Math.min(Math.max((1.0 - totalWeight), 0.0), 1.0);
@@ -408,7 +404,6 @@ const sketch = (p) => {
       weightedColor[1] = weightedColor[1] + (originalCellColor[1] * remainingWeight);
       weightedColor[2] = weightedColor[2] + (originalCellColor[2] * remainingWeight);
     }
-
 
     if (vorDebug) {
       if (totalWeight < 0.9) {
@@ -431,6 +426,21 @@ const sketch = (p) => {
     timeToGetWeightsFromPolys = timeToGetWeightsFromPolys + (tPostPolyWeight - tPrePolyWeight);
     return weightedColor;
 
+  }
+
+  function addNeighborsNeighbors() {
+
+    if (vorDebug) logInsertedDelaunay();
+    //find neighboring cells of inserted cell in insertedDelaunay
+    for (let n of insertedDelaunay.neighbors(miniIndexes.length)) {
+      // and add all the neighbor's neighbors from main voronoi to miniIndexes
+      for (let nn of aDelaunay.neighbors(miniIndexes[n])) {
+        //...if they haven't been included already
+        if (!miniIndexes.includes(nn)) {
+          miniIndexes.push(nn);
+        }
+      }
+    }
   }
 
   function drawDelaunay() {
@@ -477,17 +487,14 @@ const sketch = (p) => {
 
   function testInsert(x, y) {
 
-
-
     if (points.length > 2) {
 
       console.log(`testInsert`);
 
-      naturalNeighbourInterpolate(x, y);
+      naturalNeighborInterpolate(x, y);
       let insertedPoly = insertedVoronoi.cellPolygon(miniIndexes.length);
 
-      //If new inserted polygon array is null or undefined, 
-
+      //If new inserted polygon array is null or undefined, log it
       if (insertedPoly) {
         if (typeof insertedPoly[0][0] == 'undefined') {
           console.log('undefined');
@@ -599,17 +606,10 @@ const sketch = (p) => {
   }
 
   function readOutTimers() {
-
-    console.log(`       timeToModifyPoints: ` + timeToModifyPoints);
-    console.log(`     timeToUpdateDelaunay: ` + timeToUpdateDelaunay);
-    console.log(`      timeToUpdateVoronoi: ` + timeToUpdateVoronoi);
-    console.log(`timeToGetWeightsFromPolys: ` + timeToGetWeightsFromPolys);
-
-    timeToModifyPoints = 0;
-    timeToUpdateDelaunay = 0;
-    timeToUpdateVoronoi = 0;
+    const timeToRenderNNinSeconds = (timeToRenderNN / 1000);
+    console.log(`timeToGetWeightsFromPolys: ` + timeToGetWeightsFromPolys + `ms`);
+    console.log(`           timeToRenderNN: ` + timeToRenderNNinSeconds + `s`)
     timeToGetWeightsFromPolys = 0;
-
   }
 
 };
