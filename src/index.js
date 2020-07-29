@@ -65,7 +65,7 @@ const sketch = (p) => {
   }
 
   p.setup = function () {
-    console.log(`setup version: faster again`)
+    console.log(`setup version: random sampling`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
@@ -115,7 +115,7 @@ const sketch = (p) => {
     } else if (p.key === 'o') {
       vorDebug = !vorDebug;
     } else if (p.key === 'j') {
-      pointsFromImage(parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20));
+      pointsFromImage(parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20), 1.0);
     } else if (p.key === 'q') {
       calculateDelaunay();
     } else if (p.key === 'b') {
@@ -130,24 +130,6 @@ const sketch = (p) => {
 
     //to prevent any default behavior
     return false;
-  }
-
-  function pointsFromImage(pointStride, pointThreshold) {
-
-    //clear arrays
-    colPoints = [];
-    linearImage = [];
-
-    let copiedImage = [];
-    sourceImage.loadPixels();
-    for (let px = 0; px < (sourceImage.width * sourceImage.height * 4); px++) {
-      copiedImage.push(sourceImage.pixels[px]);
-    }
-
-    linearImage = makeImageLinear(copiedImage, sourceImage.width, sourceImage.height);
-
-    colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, pointStride, pointThreshold);
-    console.log(colPoints.length + " points");
   }
 
   function calculateDelaunay() {
@@ -533,6 +515,25 @@ const sketch = (p) => {
 
     }
   }
+
+  function pointsFromImage(sampleProbability, pointThreshold, sampleJitter) {
+
+    //clear arrays
+    colPoints = [];
+    linearImage = [];
+
+    let copiedImage = [];
+    sourceImage.loadPixels();
+    for (let px = 0; px < (sourceImage.width * sourceImage.height * 4); px++) {
+      copiedImage.push(sourceImage.pixels[px]);
+    }
+
+    linearImage = makeImageLinear(copiedImage, sourceImage.width, sourceImage.height);
+
+    colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, sampleProbability, pointThreshold, sampleJitter);
+    console.log(colPoints.length + " points");
+  }
+
 
   function randomPoints(w, h, count) {
 
