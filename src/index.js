@@ -35,23 +35,24 @@ const sketch = (p) => {
   let aVoronoi;
   let sourceImage;
   let renderedNNImage;
-  let renderedDistImage;
+
   let vorDebug = false;
   let drawDelaunayState = false;
   let drawVoronoiState = false;
   let fillVoronoiState = false;
   let drawTestInsertState = false;
   let renderingNNState = false;
+  let editModeState = false;
 
   let renderNNCounter = 0;
   let renderNNSteps = 20;
   let voronoiAreas = []; //cache of areas of voronoi cells
 
+
   let prevFound = 0; //speed up finding voronoi cells
   let miniIndexes = [] //indexes of cells to be taken from main to mini Delaunay
   let miniDelaunay;
   let miniVoronoi;
-
   let insertedDelaunay;
   let insertedVoronoi;
 
@@ -59,19 +60,19 @@ const sketch = (p) => {
   let timeToRenderNN = 0;
 
   const decimalPlaces = 11; //rounding to prevent errors
+  let offGridJitter = 1.0; //used to keep points off the pixel grid
 
   p.preload = function () {
     sourceImage = p.loadImage('assets/r.jpg');
   }
 
   p.setup = function () {
-    console.log(`setup version: random sampling`)
+    console.log(`setup version: E for edit mode`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
     //bounds = [p.width, p.height, p.width, p.height];
     renderedNNImage = p.createImage(p.width, p.height);
-    renderedDistImage = p.createImage(p.width, p.height);
     p.background(0);
     p.fill(128);
     p.rect(50, 50, 50, 50);
@@ -80,19 +81,28 @@ const sketch = (p) => {
   p.draw = function () {
 
     p.background(0);
-    p.image(renderedNNImage, 0, 0);
-    p.image(renderedDistImage, 0, 0);
 
-    drawVoronoi();
+    if (editModeState) {
 
-    if (drawDelaunayState) drawDelaunay();
+      p.image(sourceImage, 0, 0);
 
-    if (drawTestInsertState) testInsert(p.mouseX, p.mouseY);
+    } else {
 
-    if (renderingNNState) createNNInterpolation(1);
+      p.image(renderedNNImage, 0, 0);
+      drawVoronoi();
+      if (drawDelaunayState) drawDelaunay();
+      if (drawTestInsertState) testInsert(p.mouseX, p.mouseY);
+      if (renderingNNState) createNNInterpolation(1);
+
+    }
+
   }
-  // p.mouseClicked = function () {
-  // }
+
+  p.mouseClicked = function () {
+
+    if (editModeState) pickPointFromImage(p.mouseX, p.mouseY);
+
+  }
 
   p.keyTyped = function () {
     if (p.key === 'v') {
@@ -115,7 +125,7 @@ const sketch = (p) => {
     } else if (p.key === 'o') {
       vorDebug = !vorDebug;
     } else if (p.key === 'j') {
-      pointsFromImage(parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20), 1.0);
+      pointsFromImage(parseInt(p.mouseX * 4), 1 + parseInt(p.mouseY / 20), offGridJitter);
     } else if (p.key === 'q') {
       calculateDelaunay();
     } else if (p.key === 'b') {
@@ -126,6 +136,8 @@ const sketch = (p) => {
       logInsertedDelaunay();
     } else if (p.key === 'r') {
       randomPoints(p.width, p.height, 5)
+    } else if (p.key === 'e') {
+      editModeState = !editModeState;
     }
 
     //to prevent any default behavior
@@ -532,6 +544,27 @@ const sketch = (p) => {
 
     colPoints = findPoints(linearImage, sourceImage.width, sourceImage.height, sampleProbability, pointThreshold, sampleJitter);
     console.log(colPoints.length + " points");
+  }
+
+  function pickPointFromImage(x, y) {
+
+    sourceImage.loadPixels(); //is this needed?
+
+    let colR = sourceImage.pixels[4 * ((y * sourceImage.width) + x)];
+    let colG = sourceImage.pixels[4 * ((y * sourceImage.width) + x) + 1];
+    let colB = sourceImage.pixels[4 * ((y * sourceImage.width) + x) + 2];
+
+    let pickedLinearColor = sRGBtoLinear([colR, colG, colB]);
+
+    //add jitter to keep it from forming a grid in detailed areas
+    const jitteredX = x + (offGridJitter * (Math.random() - 0.5));
+    const jitteredY = y + (offGridJitter * (Math.random() - 0.5));
+
+    const finalX = parseFloat(jitteredX.toFixed(decimalPlaces));
+    const finalY = parseFloat(jitteredY.toFixed(decimalPlaces));
+
+    colPoints.push([finalX, finalY, pickedLinearColor]); 
+
   }
 
 
