@@ -68,7 +68,7 @@ const sketch = (p) => {
   }
 
   p.setup = function () {
-    console.log(`setup version: E for edit mode, subDiv if CC outside tri`)
+    console.log(`setup version: E for edit mode, subdivs restricted`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
@@ -212,42 +212,86 @@ const sketch = (p) => {
     //for (let c = 0; c < aVoronoi.circumcenters.length; c += 2) {
     for (let c = 0; c < aDelaunay.triangles.length; c += 3) {
 
-      let cxLonger = aVoronoi.circumcenters[(c/3) * 2];
-      let cyLonger = aVoronoi.circumcenters[((c/3) * 2) + 1];
+      let cxLonger = aVoronoi.circumcenters[(c / 3) * 2];
+      let cyLonger = aVoronoi.circumcenters[((c / 3) * 2) + 1];
 
-      //get corresponding triangle
+      //get indexes for corresponding triangle
       const t0 = aDelaunay.triangles[c + 0];
       const t1 = aDelaunay.triangles[c + 1];
       const t2 = aDelaunay.triangles[c + 2];
-      const ccTriPoly = [
-        [aDelaunay.points[t0 * 2], aDelaunay.points[t0 * 2 + 1]],
-        [aDelaunay.points[t1 * 2], aDelaunay.points[t1 * 2 + 1]],
-        [aDelaunay.points[t2 * 2], aDelaunay.points[t2 * 2 + 1]]
-      ];
 
-      //only add subdivision if circumcenter is outside triangle
-      if (!polygonContains(ccTriPoly, [cxLonger, cyLonger])) {
+      const point1 = [aDelaunay.points[t0 * 2], aDelaunay.points[t0 * 2 + 1]];
+      const point2 = [aDelaunay.points[t1 * 2], aDelaunay.points[t1 * 2 + 1]];
+      const point3 = [aDelaunay.points[t2 * 2], aDelaunay.points[t2 * 2 + 1]];
+
+      const ccTriPoly = [point1, point2, point3];
+
+      // const ccTriPoly = [
+      //   [aDelaunay.points[t0 * 2], aDelaunay.points[t0 * 2 + 1]],
+      //   [aDelaunay.points[t1 * 2], aDelaunay.points[t1 * 2 + 1]],
+      //   [aDelaunay.points[t2 * 2], aDelaunay.points[t2 * 2 + 1]]
+      // ];
+
+      //only add subdivision for  triangles if at least one of the points is less than halfway to bounds
+      // if point1 is inside bounds/2 OR point2 is inside bounds/2 OR point3 is inside bounds/2
+
+      if (
+        ((point1[0] > bounds[0] / 2) && (point1[0] < bounds[2] / 2) && (point1[1] > bounds[1] / 2) && (point1[1] < bounds[3] / 2)) ||
+        ((point2[0] > bounds[0] / 2) && (point2[0] < bounds[2] / 2) && (point2[1] > bounds[1] / 2) && (point2[1] < bounds[3] / 2)) ||
+        ((point3[0] > bounds[0] / 2) && (point3[0] < bounds[2] / 2) && (point3[1] > bounds[1] / 2) && (point3[1] < bounds[3] / 2))
+      ) {
+
+        //only add subdivision if circumcenter is outside triangle
+        if (!polygonContains(ccTriPoly, [cxLonger, cyLonger])) {
 
 
-        //only add new point if it is within bounds
-        if ((cxLonger > bounds[0]) && (cxLonger < bounds[2]) && (cyLonger > bounds[1]) && (cyLonger < bounds[3])) {
+          //if new point is out of bounds, clip the out of bounds dimension and shrink the other one to match
+          //this is approximate, would be more accurate if offset to work from zero as centre of canvas
+          //or existing trangle as centre
 
-          let cxShort = parseFloat(cxLonger.toFixed(decimalPlaces));
-          let cyShort = parseFloat(cyLonger.toFixed(decimalPlaces));
+          if (cxLonger < bounds[0]) {
+            const shrinkRatio = cxLonger / bounds[0];
+            cxLonger = (bounds[0] + 1);
+            cyLonger = cyLonger / shrinkRatio;
+          }
+          if (cxLonger > bounds[2]) {
+            const shrinkRatio = cxLonger / bounds[2];
+            cxLonger = (bounds[2] - 1);
+            cyLonger = cyLonger / shrinkRatio;
+          }
+          if (cyLonger < bounds[1]) {
+            const shrinkRatio = cyLonger / bounds[1];
+            cyLonger = (bounds[1] + 1);
+            cxLonger = cxLonger / shrinkRatio;
+          }
+          if (cyLonger > bounds[3]) {
+            const shrinkRatio = cyLonger / bounds[3];
+            cyLonger = (bounds[3] - 1);
+            cxLonger = cxLonger / shrinkRatio;
+          }
 
-          // if (vorDebug) console.log(`circ loop insertedDelaunay.points:`);
-          // if (vorDebug) console.log(insertedDelaunay.points);
 
-          let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort);
+          //add new point if it is now within bounds
+          if ((cxLonger > bounds[0]) && (cxLonger < bounds[2]) && (cyLonger > bounds[1]) && (cyLonger < bounds[3])) {
 
-          if (vorDebug) console.log(`subdividedColor:`);
-          if (vorDebug) console.log(subdividedColor);
+            let cxShort = parseFloat(cxLonger.toFixed(decimalPlaces));
+            let cyShort = parseFloat(cyLonger.toFixed(decimalPlaces));
 
-          subdivColPoints.push([cxShort, cyShort, subdividedColor]);
+            // if (vorDebug) console.log(`circ loop insertedDelaunay.points:`);
+            // if (vorDebug) console.log(insertedDelaunay.points);
+
+            let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort);
+
+            if (vorDebug) console.log(`subdividedColor:`);
+            if (vorDebug) console.log(subdividedColor);
+
+            subdivColPoints.push([cxShort, cyShort, subdividedColor]);
+
+          } else console.log('new point out of bounds');
 
         }
 
-      }
+      } else console.log('triangle outside inner bounds');
 
     }
 
