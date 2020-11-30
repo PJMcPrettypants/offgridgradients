@@ -27,7 +27,7 @@ const containerElement = document.getElementById('p5-container');
 
 const sketch = (p) => {
 
-  let colPoints = []; //Stores image data as point positions alongside corresponding colors [x,y,[r,g,b]] 
+  let colPoints = []; //Stores point positions alongside corresponding colors, plus whether points are key [x,y,[r,g,b], k] 
   let linearImage = []; //stores linear image, as the p5.js image object only stores 8 bit color
   let points = []; //points array is the point positions only [x,y], extracted for feeding into d3-delaunay, but with indexes matching colPoints
   let bounds = [];
@@ -46,7 +46,6 @@ const sketch = (p) => {
   let editModeState = false;
 
   let renderNNCounter = 0;
-  let renderNNSteps = 20;
   let voronoiAreas = []; //cache of areas of voronoi cells
 
 
@@ -60,15 +59,19 @@ const sketch = (p) => {
   let timeToGetWeightsFromPolys = 0;
   let timeToRenderNN = 0;
 
+  const renderNNSteps = 20;
+  let zoomFactorOnLoad = 1;
   const decimalPlaces = 11; //rounding to prevent errors
   let offGridJitter = 1.0; //used to keep points off the pixel grid
+  const radiusEdgeRatioLimit = Math.sqrt(2);
+  //const radiusEdgeRatioLimit = 2500;
 
   p.preload = function () {
     sourceImage = p.loadImage('assets/r.jpg');
   }
 
   p.setup = function () {
-    console.log(`setup version: E for edit mode, subdivs restricted`)
+    console.log(`setup version: E for edit mode, corrected radius measure`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
@@ -135,11 +138,15 @@ const sketch = (p) => {
       logVoronoiPolys();
     } else if (p.key === 'y') {
       logInsertedDelaunay();
-    } else if (p.key === 'r') {
+    } else if (p.key === 'a') {
       randomPoints(p.width, p.height, 5)
     } else if (p.key === 'e') {
       editModeState = !editModeState;
-    }
+    } else if (p.key === 't') {
+      iterativeSubdivision();
+    } else if (p.key === 'r') {
+      removalSubdivision();
+    } 
 
     //to prevent any default behavior
     return false;
@@ -226,50 +233,17 @@ const sketch = (p) => {
 
       const ccTriPoly = [point1, point2, point3];
 
-      // const ccTriPoly = [
-      //   [aDelaunay.points[t0 * 2], aDelaunay.points[t0 * 2 + 1]],
-      //   [aDelaunay.points[t1 * 2], aDelaunay.points[t1 * 2 + 1]],
-      //   [aDelaunay.points[t2 * 2], aDelaunay.points[t2 * 2 + 1]]
-      // ];
-
       //only add subdivision for  triangles if at least one of the points is less than halfway to bounds
       // if point1 is inside bounds/2 OR point2 is inside bounds/2 OR point3 is inside bounds/2
-
-      if (
-        ((point1[0] > bounds[0] / 2) && (point1[0] < bounds[2] / 2) && (point1[1] > bounds[1] / 2) && (point1[1] < bounds[3] / 2)) ||
-        ((point2[0] > bounds[0] / 2) && (point2[0] < bounds[2] / 2) && (point2[1] > bounds[1] / 2) && (point2[1] < bounds[3] / 2)) ||
-        ((point3[0] > bounds[0] / 2) && (point3[0] < bounds[2] / 2) && (point3[1] > bounds[1] / 2) && (point3[1] < bounds[3] / 2))
-      ) {
+      if (triNotOutOfInnerBounds(point1, point2, point3)) {
 
         //only add subdivision if circumcenter is outside triangle
-        if (!polygonContains(ccTriPoly, [cxLonger, cyLonger])) {
+        if (!polygonContains(ccTriPoly, [cxLonger, cxLonger])) {
 
-
-          //if new point is out of bounds, clip the out of bounds dimension and shrink the other one to match
-          //this is approximate, would be more accurate if offset to work from zero as centre of canvas
-          //or existing trangle as centre
-
-          if (cxLonger < bounds[0]) {
-            const shrinkRatio = cxLonger / bounds[0];
-            cxLonger = (bounds[0] + 1);
-            cyLonger = cyLonger / shrinkRatio;
-          }
-          if (cxLonger > bounds[2]) {
-            const shrinkRatio = cxLonger / bounds[2];
-            cxLonger = (bounds[2] - 1);
-            cyLonger = cyLonger / shrinkRatio;
-          }
-          if (cyLonger < bounds[1]) {
-            const shrinkRatio = cyLonger / bounds[1];
-            cyLonger = (bounds[1] + 1);
-            cxLonger = cxLonger / shrinkRatio;
-          }
-          if (cyLonger > bounds[3]) {
-            const shrinkRatio = cyLonger / bounds[3];
-            cyLonger = (bounds[3] - 1);
-            cxLonger = cxLonger / shrinkRatio;
-          }
-
+          //clip to bounds
+          const clippedPoint = clipToBounds(cxLonger, cyLonger);
+          cxLonger = clippedPoint[0];
+          cyLonger = clippedPoint[1];
 
           //add new point if it is now within bounds
           if ((cxLonger > bounds[0]) && (cxLonger < bounds[2]) && (cyLonger > bounds[1]) && (cyLonger < bounds[3])) {
@@ -285,11 +259,13 @@ const sketch = (p) => {
             if (vorDebug) console.log(`subdividedColor:`);
             if (vorDebug) console.log(subdividedColor);
 
-            subdivColPoints.push([cxShort, cyShort, subdividedColor]);
+            //subdivColPoints.push([cxShort, cyShort, subdividedColor]);
+            //These are not key points
+            subdivColPoints.push([cxShort, cyShort, subdividedColor, false]);
 
           } else console.log('new point out of bounds');
 
-        }
+        } else console.log('point not outside triangle');
 
       } else console.log('triangle outside inner bounds');
 
@@ -301,6 +277,155 @@ const sketch = (p) => {
     }
 
     readOutTimers();
+
+  }
+
+  function iterativeSubdivision() {
+
+    const tPreIterSubdiv = performance.now();
+
+    let currentHighRatio = 100;
+
+    while (currentHighRatio > radiusEdgeRatioLimit) {
+    //for (let j = 0; j < 50; j++) {
+
+      let radiusEdgeRatios = [];
+
+      for (let t = 0; t < aDelaunay.triangles.length; t += 3) {
+
+        //get indexes for corresponding triangle
+        const t0 = aDelaunay.triangles[t + 0];
+        const t1 = aDelaunay.triangles[t + 1];
+        const t2 = aDelaunay.triangles[t + 2];
+
+        const point1 = [aDelaunay.points[t0 * 2], aDelaunay.points[t0 * 2 + 1]];
+        const point2 = [aDelaunay.points[t1 * 2], aDelaunay.points[t1 * 2 + 1]];
+        const point3 = [aDelaunay.points[t2 * 2], aDelaunay.points[t2 * 2 + 1]];
+
+        const triPoly = [point1, point2, point3];
+
+        let shortestSide = bounds[2];
+
+
+        //find shortest side of triangle if at least one of the points is within bounds/2
+        if (triNotOutOfInnerBounds(point1, point2, point3)) {
+
+          for (let s = 0; s < 3; s++) {
+
+            const thisSide = p.dist(triPoly[s][0], triPoly[s][1], triPoly[(s + 1) % 3][0], triPoly[(s + 1) % 3][1]);
+
+            if (thisSide < shortestSide) shortestSide = thisSide;
+
+          }
+        }
+
+        const ccx = aVoronoi.circumcenters[(t / 3) * 2];
+        const ccy = aVoronoi.circumcenters[((t / 3) * 2) + 1];
+
+        const distToCC = p.dist(triPoly[0][0], triPoly[0][1], ccx, ccy);
+
+        radiusEdgeRatios.push(distToCC / shortestSide);
+
+      }
+
+      //find highest ratio of circumcenter radius to shortest side
+      let triToSubdivide = 0;
+      let max = radiusEdgeRatios[0];
+      for (let i = 1; i < radiusEdgeRatios.length; i++) {
+        if (radiusEdgeRatios[i] > max) {
+          max = radiusEdgeRatios[i];
+          triToSubdivide = i;
+
+        }
+      }
+
+      console.log('triToSubdivide:' + triToSubdivide + ' of ' + radiusEdgeRatios.length + ' with ratio: ' + radiusEdgeRatios[triToSubdivide]);
+
+      //get circumcenter of triangle
+      let cxLonger = aVoronoi.circumcenters[triToSubdivide * 2];
+      let cyLonger = aVoronoi.circumcenters[(triToSubdivide * 2) + 1];
+
+      //console.log('before clipping... cxLonger: ' + cxLonger + ', cyLonger: ' + cyLonger);
+
+      //clip to bounds
+      const clippedPoint = clipToBounds(cxLonger, cyLonger);
+      cxLonger = clippedPoint[0];
+      cyLonger = clippedPoint[1];
+
+      //console.log(' after clipping... cxLonger: ' + cxLonger + ', cyLonger: ' + cyLonger);
+
+      //add new point if it is now within bounds
+      if ((cxLonger > bounds[0]) && (cxLonger < bounds[2]) && (cyLonger > bounds[1]) && (cyLonger < bounds[3])) {
+
+        let cxShort = parseFloat(cxLonger.toFixed(decimalPlaces));
+        let cyShort = parseFloat(cyLonger.toFixed(decimalPlaces));
+
+        let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort);
+
+        if (vorDebug) console.log(`subdividedColor:`);
+        if (vorDebug) console.log(subdividedColor);
+
+        //add (but not as key point)
+        colPoints.push([cxShort, cyShort, subdividedColor, false]);
+        calculateDelaunay();
+
+      } else console.log('new point out of bounds');
+
+      currentHighRatio = radiusEdgeRatios[triToSubdivide];
+    }
+
+    const tPostIterSubdiv = performance.now();
+    const iterSubdivTime = tPostIterSubdiv - tPreIterSubdiv;
+
+    //console.log("found triangle " + triToSubdivide + " out of " + aDelaunay.triangles.length + " in " + iterSubdivTime + "ms");
+    console.log("Subdivided down to ratio of " + currentHighRatio + " in " + iterSubdivTime + "ms");
+
+    //TODO: for each non-original point, remove and recalculate colour
+
+  }
+
+  function removalSubdivision() {
+
+    //create a copy, which will have original colours
+    let colPointsPreRemoval = JSON.parse(JSON.stringify(colPoints));
+
+    //for each interpolated point, make a copy of colPoints with that point removed
+
+    for (let i = 0; i < colPointsPreRemoval.length; i++) {
+
+      let colPointsRemoved = [];
+
+      if (colPoints[i][3] == false){
+
+        for (let j = 0; j < colPointsPreRemoval.length; j++) {
+          if (!(j=i)) colPointsRemoved.push(colPointsPreRemoval[i]);
+        }
+        
+
+        removalPoints = [];
+
+        for (let p = 0; p < colPointsRemoved.length; p++) {
+          let inputPoint = colPointsRemoved[p];
+    
+          //add jitter to x
+          inputPoint[0] = inputPoint[0] + ((Math.random() / 1000) - 0.0005);
+          //add jitter to y
+          inputPoint[1] = inputPoint[1] + ((Math.random() / 1000) - 0.0005);
+    
+          removalPoints.push([inputPoint[0], inputPoint[1]]);
+    
+        }
+    
+        let rDelaunay = Delaunay.from(removalPoints);
+        let rVoronoi = rDelaunay.voronoi(bounds);
+
+        //find colour at location colPoints[i][0], colPoints[i][1]
+        
+      }
+
+    }
+
+    
 
   }
 
@@ -484,6 +609,37 @@ const sketch = (p) => {
 
   }
 
+  function clipToBounds(xToClip, yToClip) {
+
+    //if new point is out of bounds, clip the out of bounds dimension and shrink the other one to match
+    //this is approximate, would be more accurate if offset to work from zero as centre of canvas
+    //or existing trangle as centre
+
+    if (xToClip < bounds[0]) {
+      const shrinkRatio = xToClip / bounds[0];
+      xToClip = bounds[0] + (Math.random() * offGridJitter);
+      yToClip = yToClip / shrinkRatio;
+    }
+    if (xToClip > bounds[2]) {
+      const shrinkRatio = xToClip / bounds[2];
+      xToClip = bounds[2] - (Math.random() * offGridJitter);
+      yToClip = yToClip / shrinkRatio;
+    }
+    if (yToClip < bounds[1]) {
+      const shrinkRatio = yToClip / bounds[1];
+      yToClip = bounds[1] + 1 + (Math.random() * offGridJitter);
+      xToClip = xToClip / shrinkRatio;
+    }
+    if (yToClip > bounds[3]) {
+      const shrinkRatio = yToClip / bounds[3];
+      yToClip = bounds[3] - (Math.random() * offGridJitter);
+      xToClip = xToClip / shrinkRatio;
+    }
+
+    return [xToClip, yToClip];
+
+  }
+
   function addNeighborsNeighbors() {
 
     if (vorDebug) logInsertedDelaunay();
@@ -532,6 +688,20 @@ const sketch = (p) => {
     }
   }
 
+  function triNotOutOfInnerBounds(point1, point2, point3) {
+
+    //check that at least one of the points is less than halfway to bounds
+    // if point1 is inside bounds/2 OR point2 is inside bounds/2 OR point3 is inside bounds/2
+    if (
+      ((point1[0] > bounds[0] / 2) && (point1[0] < bounds[2] / 2) && (point1[1] > bounds[1] / 2) && (point1[1] < bounds[3] / 2)) ||
+      ((point2[0] > bounds[0] / 2) && (point2[0] < bounds[2] / 2) && (point2[1] > bounds[1] / 2) && (point2[1] < bounds[3] / 2)) ||
+      ((point3[0] > bounds[0] / 2) && (point3[0] < bounds[2] / 2) && (point3[1] > bounds[1] / 2) && (point3[1] < bounds[3] / 2))
+    )return true;
+
+    else return false;
+
+  }
+
   function drawPolygon(drawPolyArray) {
     //takes an array of 2d points arrays [[x,y][x,y][x,y]...]
     p.beginShape();
@@ -564,6 +734,8 @@ const sketch = (p) => {
       p.stroke(0, 0, 255);
       p.noFill();
       drawPolygon(insertedPoly);
+
+      //let currentCell = aDelaunay.find(x, y);
 
       let currentCell = aDelaunay.find(x, y);
 
@@ -647,7 +819,8 @@ const sketch = (p) => {
     const finalX = parseFloat(jitteredX.toFixed(decimalPlaces));
     const finalY = parseFloat(jitteredY.toFixed(decimalPlaces));
 
-    colPoints.push([finalX, finalY, pickedLinearColor]);
+    //add to colPoints, with key point = true
+    colPoints.push([finalX, finalY, pickedLinearColor, true]);
 
   }
 
@@ -664,8 +837,9 @@ const sketch = (p) => {
       //let pointy = Math.random() * h;
       let pointx = (Math.random() * (w / 2)) + (w / 4);
       let pointy = (Math.random() * (h / 2)) + (h / 4);
-
-      colPoints.push([pointx, pointy, pointColor]);
+      
+      //add to colPoints, with key point = true
+      colPoints.push([pointx, pointy, pointColor, true]);
 
     }
     console.log(`colPoints:`);
@@ -688,6 +862,7 @@ const sketch = (p) => {
   }
 
   function savePointsToFile() {
+    //TODO: save only kep points
     let JSONpoints = JSON.stringify(colPoints);
     p.save(JSONpoints, 'savedPoints.json');
   }
@@ -706,6 +881,12 @@ const sketch = (p) => {
     for (let jp in as) {
 
       let parsedColPoint = as[jp];
+
+      parsedColPoint[0] = ((parsedColPoint[0] - (bounds[2]/20)) * zoomFactorOnLoad) + (bounds[2]/20);
+      parsedColPoint[1] = ((parsedColPoint[1] - (bounds[2]/20)) * zoomFactorOnLoad) + (bounds[2]/20);
+
+      //set as key point
+      parsedColPoint.push(true);
 
       let cxLong = parsedColPoint[0];
       let cyLong = parsedColPoint[1];
