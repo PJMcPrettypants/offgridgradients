@@ -72,7 +72,7 @@ const sketch = (p) => {
   }
 
   p.setup = function () {
-    console.log(`setup version: E for edit mode, corrected radius measure`)
+    console.log(`setup version: E for edit mode, removed extra timer readout`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
@@ -275,7 +275,6 @@ const sketch = (p) => {
       if (pointWontBeDuplicate(colPoints, subdivColPoints[i])) colPoints.push(subdivColPoints[i]);
     }
 
-    readOutTimers();
 
   }
 
