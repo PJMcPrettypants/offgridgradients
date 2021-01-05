@@ -5,9 +5,8 @@ import {
     polygon
 } from 'polygon-tools';
 
-function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds) {
+export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds) {
 
-    let oldMiniIndexes = miniIndexes.slice();
     let miniIndexesBefore = miniIndexes.length; //might not be needed?
 
     //if there's already a mini Delaunay, try updating insertedVoronoi to check for new Neighbours
@@ -44,7 +43,7 @@ function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelau
             NNPoints.push([x, y]);
             insertedDelaunay = Delaunay.from(NNPoints);
 
-            addNeighborsNeighbors(insertedDelaunay, aDelaunay, miniIndexes, vorDebug);
+            addNeighborsNeighbors();
 
         } while (miniIndexes.length > miniIndexesBefore); //loop if new neighbor's neighbors added
         //If the newly added neighbor's neighbors also turn out to be 1st degree neighbors of inserted cell
@@ -107,7 +106,6 @@ function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelau
 
         let neighborBeforeArea = voronoiAreas[n];
 
-        if (vorDebug) console.log('oldNeighborBeforeArea: ' + oldNeighborBeforeArea);
         if (vorDebug) console.log('   neighborBeforeArea: ' + neighborBeforeArea);
 
         let intersectionArea = 0;
@@ -125,8 +123,7 @@ function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelau
 
         if (vorDebug) console.log(`insertedPoly: `);
         if (vorDebug) console.log(insertedPoly);
-        if (vorDebug) p.stroke(0, 0, 255);
-        if (vorDebug) drawPolygon(insertedPoly);
+        //if (vorDebug) drawPolygon(insertedPoly);
         if (vorDebug) console.log('intersectionArea');
 
         if (intersectionArea > 0) {
@@ -170,44 +167,48 @@ function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelau
             console.log(`totalWeight:`);
             console.log(totalWeight);
 
-
-            p.noFill();
-            drawPolygon(insertedPoly);
-            p.stroke(255, 0, 0, 128);
         }
     }
 
 
-    return weightedColor;
+    return {
+        NNweightedColor: weightedColor,
+        updatedMiniIndexes: miniIndexes,
+        updatedInsertedDelaunay: insertedDelaunay,
+        updatedInsertedVoronoi: insertedVoronoi,
+        updatedVoronoiAreas: voronoiAreas,
+        updatedPrevFound: prevFound
+    };
 
-}
+    function addNeighborsNeighbors() {
 
-function addNeighborsNeighbors(insertedDelaunay, aDelaunay, miniIndexes, vorDebug) {
-
-    if (vorDebug) logInsertedDelaunay();
-    //find neighboring cells of inserted cell in insertedDelaunay
-    for (let n of insertedDelaunay.neighbors(miniIndexes.length)) {
-        // and add all the neighbor's neighbors from main voronoi to miniIndexes
-        for (let nn of aDelaunay.neighbors(miniIndexes[n])) {
-            //...if they haven't been included already
-            if (!miniIndexes.includes(nn)) {
-                miniIndexes.push(nn);
+        if (vorDebug) logInsertedDelaunay();
+        //find neighboring cells of inserted cell in insertedDelaunay
+        for (let n of insertedDelaunay.neighbors(miniIndexes.length)) {
+            // and add all the neighbor's neighbors from main voronoi to miniIndexes
+            for (let nn of aDelaunay.neighbors(miniIndexes[n])) {
+                //...if they haven't been included already
+                if (!miniIndexes.includes(nn)) {
+                    miniIndexes.push(nn);
+                }
             }
         }
     }
+
+    function logInsertedDelaunay() {
+        console.log(`aDelaunay.points:`);
+        console.log(aDelaunay.points);
+        console.log(`miniIndexes :`);
+        console.log(miniIndexes);
+        console.log(`insertedDelaunay.points:`);
+        console.log(insertedDelaunay.points);
+    }
+
 }
 
-function logInsertedDelaunay(aDelaunay, insertedDelaunay, miniIndexes) {
-    console.log(`aDelaunay.points:`);
-    console.log(aDelaunay.points);
-    console.log(`miniIndexes :`);
-    console.log(miniIndexes);
-    console.log(`insertedDelaunay.points:`);
-    console.log(insertedDelaunay.points);
-}
 
-export {
-    naturalNeighborInterpolate,
-    addNeighborsNeighbors,
-    logInsertedDelaunay
-};
+
+// export {
+//     naturalNeighborInterpolate,
+//     logInsertedDelaunay
+// };

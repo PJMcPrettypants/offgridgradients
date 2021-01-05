@@ -21,9 +21,7 @@ import {
   polygonContains
 } from 'd3-polygon';
 import {
-  naturalNeighborInterpolate,
-  addNeighborsNeighbors,
-  logInsertedDelaunay
+  naturalNeighborInterpolate
 } from './naturalNeighborInterpolate.js';
 
 
@@ -72,7 +70,7 @@ const sketch = (p) => {
   }
 
   p.setup = function () {
-    console.log(`setup version: E for edit mode, removed extra timer readout`)
+    console.log(`setup version: E for edit, returned voronoi areas`)
     p.createCanvas(800, 800);
     dt = p.pixelDensity();
     bounds = [p.width * -10, p.height * -10, p.width * 11, p.height * 11];
@@ -145,7 +143,7 @@ const sketch = (p) => {
       iterativeSubdivision();
     } else if (p.key === 'r') {
       removalSubdivision();
-    } 
+    }
 
     //to prevent any default behavior
     return false;
@@ -190,7 +188,23 @@ const sketch = (p) => {
 
       for (let x = 0; x < p.width; x += strideVP) {
 
-        let NNweightedColor = linearTosRGB((naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound,  bounds)));
+        let {
+          NNweightedColor,
+          updatedMiniIndexes,
+          updatedInsertedDelaunay,
+          updatedInsertedVoronoi,
+          updatedVoronoiAreas,
+          updatedPrevFound,
+        } = naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+
+        NNweightedColor = linearTosRGB(NNweightedColor);
+
+        miniIndexes = updatedMiniIndexes;
+        insertedDelaunay = updatedInsertedDelaunay;
+        insertedVoronoi = updatedInsertedVoronoi;
+        prevFound = updatedPrevFound;
+        voronoiAreas = updatedVoronoiAreas;
+
         if (vorDebug) console.log(`Natural neighbor rendered: ` + x + `, ` + y);
         renderedNNImage.set(x, y, p.color(NNweightedColor));
       }
@@ -253,7 +267,21 @@ const sketch = (p) => {
             // if (vorDebug) console.log(`circ loop insertedDelaunay.points:`);
             // if (vorDebug) console.log(insertedDelaunay.points);
 
-            let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+            let {
+              NNweightedColor,
+              updatedMiniIndexes,
+              updatedInsertedDelaunay,
+              updatedInsertedVoronoi,
+              updatedVoronoiAreas,
+              updatedPrevFound
+            } = naturalNeighborInterpolate(cxShort, cyShort, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+            
+            let subdividedColor = NNweightedColor;
+            miniIndexes = updatedMiniIndexes;
+            insertedDelaunay = updatedInsertedDelaunay;
+            insertedVoronoi = updatedInsertedVoronoi;
+            voronoiAreas = updatedVoronoiAreas;
+            prevFound = updatedPrevFound;
 
             if (vorDebug) console.log(`subdividedColor:`);
             if (vorDebug) console.log(subdividedColor);
@@ -285,7 +313,7 @@ const sketch = (p) => {
     let currentHighRatio = 100;
 
     while (currentHighRatio > radiusEdgeRatioLimit) {
-    //for (let j = 0; j < 50; j++) {
+      //for (let j = 0; j < 50; j++) {
 
       let radiusEdgeRatios = [];
 
@@ -358,7 +386,20 @@ const sketch = (p) => {
         let cxShort = parseFloat(cxLonger.toFixed(decimalPlaces));
         let cyShort = parseFloat(cyLonger.toFixed(decimalPlaces));
 
-        let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+        let {
+          NNweightedColor,
+          updatedMiniIndexes,
+          updatedInsertedDelaunay,
+          updatedInsertedVoronoi,
+          updatedVoronoiAreas,
+          updatedPrevFound
+        } = naturalNeighborInterpolate(cxShort, cyShort, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+        let subdividedColor = NNweightedColor;
+        miniIndexes = updatedMiniIndexes;
+        insertedDelaunay = updatedInsertedDelaunay;
+        insertedVoronoi = updatedInsertedVoronoi;
+        voronoiAreas = updatedVoronoiAreas;
+        prevFound = updatedPrevFound;
 
         if (vorDebug) console.log(`subdividedColor:`);
         if (vorDebug) console.log(subdividedColor);
@@ -394,38 +435,38 @@ const sketch = (p) => {
 
       let colPointsRemoved = [];
 
-      if (colPoints[i][3] == false){
+      if (colPoints[i][3] == false) {
 
         for (let j = 0; j < colPointsPreRemoval.length; j++) {
-          if (!(j=i)) colPointsRemoved.push(colPointsPreRemoval[i]);
+          if (!(j = i)) colPointsRemoved.push(colPointsPreRemoval[i]);
         }
-        
+
 
         removalPoints = [];
 
         for (let p = 0; p < colPointsRemoved.length; p++) {
           let inputPoint = colPointsRemoved[p];
-    
+
           //add jitter to x
           inputPoint[0] = inputPoint[0] + ((Math.random() / 1000) - 0.0005);
           //add jitter to y
           inputPoint[1] = inputPoint[1] + ((Math.random() / 1000) - 0.0005);
-    
+
           removalPoints.push([inputPoint[0], inputPoint[1]]);
-    
+
         }
-    
+
         let rDelaunay = Delaunay.from(removalPoints);
         let rVoronoi = rDelaunay.voronoi(bounds);
 
         //TODO:
         //find colour at location colPoints[i][0], colPoints[i][1]
-        
+
       }
 
     }
 
-    
+
 
   }
 
@@ -504,7 +545,7 @@ const sketch = (p) => {
       ((point1[0] > bounds[0] / 2) && (point1[0] < bounds[2] / 2) && (point1[1] > bounds[1] / 2) && (point1[1] < bounds[3] / 2)) ||
       ((point2[0] > bounds[0] / 2) && (point2[0] < bounds[2] / 2) && (point2[1] > bounds[1] / 2) && (point2[1] < bounds[3] / 2)) ||
       ((point3[0] > bounds[0] / 2) && (point3[0] < bounds[2] / 2) && (point3[1] > bounds[1] / 2) && (point3[1] < bounds[3] / 2))
-    )return true;
+    ) return true;
 
     else return false;
 
@@ -645,7 +686,7 @@ const sketch = (p) => {
       //let pointy = Math.random() * h;
       let pointx = (Math.random() * (w / 2)) + (w / 4);
       let pointy = (Math.random() * (h / 2)) + (h / 4);
-      
+
       //add to colPoints, with key point = true
       colPoints.push([pointx, pointy, pointColor, true]);
 
@@ -681,8 +722,8 @@ const sketch = (p) => {
 
       let parsedColPoint = as[jp];
 
-      parsedColPoint[0] = ((parsedColPoint[0] - (bounds[2]/20)) * zoomFactorOnLoad) + (bounds[2]/20);
-      parsedColPoint[1] = ((parsedColPoint[1] - (bounds[2]/20)) * zoomFactorOnLoad) + (bounds[2]/20);
+      parsedColPoint[0] = ((parsedColPoint[0] - (bounds[2] / 20)) * zoomFactorOnLoad) + (bounds[2] / 20);
+      parsedColPoint[1] = ((parsedColPoint[1] - (bounds[2] / 20)) * zoomFactorOnLoad) + (bounds[2] / 20);
 
       //set as key point
       parsedColPoint.push(true);
