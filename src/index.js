@@ -51,12 +51,6 @@ const sketch = (p) => {
 
   let renderNNCounter = 0;
 
-  let prevFound = 0; //speed up finding voronoi cells
-  let miniIndexes = [] //indexes of cells to be taken from main to mini Delaunay
-  let voronoiAreas = []; //cache of areas of voronoi cells
-  let insertedDelaunay;
-  let insertedVoronoi;
-
   let timeToRenderNN = 0;
 
   const renderNNSteps = 20;
@@ -174,6 +168,16 @@ const sketch = (p) => {
 
   function createNNInterpolation(strideVP) {
 
+    const NNInterpolationCache = {
+
+      miniIndexes : [], //indexes of cells to be taken from main to mini Delaunay
+      insertedDelaunay : {},
+      insertedVoronoi : {},
+      prevFound : 0, //speed up finding voronoi cells
+      voronoiAreas : [] //cache of areas of voronoi cells
+
+    };
+
     const tPreNNRender = performance.now();
 
     renderedNNImage.loadPixels();
@@ -185,25 +189,11 @@ const sketch = (p) => {
       (y < (stepEnd - 1)) && (y < p.height); y += strideVP) {
 
 
-
       for (let x = 0; x < p.width; x += strideVP) {
 
-        let {
-          NNweightedColor,
-          updatedMiniIndexes,
-          updatedInsertedDelaunay,
-          updatedInsertedVoronoi,
-          updatedVoronoiAreas,
-          updatedPrevFound,
-        } = naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+        let NNweightedColor = naturalNeighborInterpolate(x, y, colPoints, points, aDelaunay, bounds, NNInterpolationCache);
 
         NNweightedColor = linearTosRGB(NNweightedColor);
-
-        miniIndexes = updatedMiniIndexes;
-        insertedDelaunay = updatedInsertedDelaunay;
-        insertedVoronoi = updatedInsertedVoronoi;
-        prevFound = updatedPrevFound;
-        voronoiAreas = updatedVoronoiAreas;
 
         if (vorDebug) console.log(`Natural neighbor rendered: ` + x + `, ` + y);
         renderedNNImage.set(x, y, p.color(NNweightedColor));
@@ -267,21 +257,8 @@ const sketch = (p) => {
             // if (vorDebug) console.log(`circ loop insertedDelaunay.points:`);
             // if (vorDebug) console.log(insertedDelaunay.points);
 
-            let {
-              NNweightedColor,
-              updatedMiniIndexes,
-              updatedInsertedDelaunay,
-              updatedInsertedVoronoi,
-              updatedVoronoiAreas,
-              updatedPrevFound
-            } = naturalNeighborInterpolate(cxShort, cyShort, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
+            let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort, colPoints, points, aDelaunay, bounds);
             
-            let subdividedColor = NNweightedColor;
-            miniIndexes = updatedMiniIndexes;
-            insertedDelaunay = updatedInsertedDelaunay;
-            insertedVoronoi = updatedInsertedVoronoi;
-            voronoiAreas = updatedVoronoiAreas;
-            prevFound = updatedPrevFound;
 
             if (vorDebug) console.log(`subdividedColor:`);
             if (vorDebug) console.log(subdividedColor);
@@ -386,21 +363,8 @@ const sketch = (p) => {
         let cxShort = parseFloat(cxLonger.toFixed(decimalPlaces));
         let cyShort = parseFloat(cyLonger.toFixed(decimalPlaces));
 
-        let {
-          NNweightedColor,
-          updatedMiniIndexes,
-          updatedInsertedDelaunay,
-          updatedInsertedVoronoi,
-          updatedVoronoiAreas,
-          updatedPrevFound
-        } = naturalNeighborInterpolate(cxShort, cyShort, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds);
-        let subdividedColor = NNweightedColor;
-        miniIndexes = updatedMiniIndexes;
-        insertedDelaunay = updatedInsertedDelaunay;
-        insertedVoronoi = updatedInsertedVoronoi;
-        voronoiAreas = updatedVoronoiAreas;
-        prevFound = updatedPrevFound;
-
+        let subdividedColor = naturalNeighborInterpolate(cxShort, cyShort, colPoints, points, aDelaunay, bounds);
+        
         if (vorDebug) console.log(`subdividedColor:`);
         if (vorDebug) console.log(subdividedColor);
 

@@ -5,55 +5,67 @@ import {
     polygon
 } from 'polygon-tools';
 
-export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points, aDelaunay, insertedDelaunay, insertedVoronoi, voronoiAreas, vorDebug, prevFound, bounds) {
 
-    let miniIndexesBefore = miniIndexes.length; //might not be needed?
+
+export function naturalNeighborInterpolate(x, y, colPoints, points, aDelaunay, bounds, 
+    cache = {
+        miniIndexes : [],
+        insertedDelaunay : {},
+        insertedVoronoi : {},
+        prevFound : 0,
+        voronoiAreas : []
+      }
+    ) {
+
+    const NNDebug = false;
+
+    let miniIndexesBefore = cache.miniIndexes.length; //might not be needed?
 
     //if there's already a mini Delaunay, try updating insertedVoronoi to check for new Neighbours
     if (miniIndexesBefore > 0) {
-        if (vorDebug) console.log(`tried update`);
+        if (NNDebug) console.log(`tried update`);
 
-        insertedDelaunay.points[insertedDelaunay.points.length - 2] = x;
-        insertedDelaunay.points[insertedDelaunay.points.length - 1] = y;
-        insertedVoronoi.update();
-        addNeighborsNeighbors(insertedDelaunay, aDelaunay, miniIndexes, vorDebug);
-    } else if (vorDebug) console.log(`didn't try update`);
+        cache.insertedDelaunay.points[cache.insertedDelaunay.points.length - 2] = x;
+        cache.insertedDelaunay.points[cache.insertedDelaunay.points.length - 1] = y;
+        cache.insertedVoronoi.update();
+        addNeighborsNeighbors(cache.insertedDelaunay, aDelaunay, cache.miniIndexes, NNDebug);
+    } else if (NNDebug) console.log(`didn't try update`);
 
     //if there are new neighbours, OR no mini Delaunay, start a new mini Delaunay
-    if ((miniIndexes.length > miniIndexesBefore) || (miniIndexesBefore < 1)) {
-        if (vorDebug) console.log(`didn't skip new Delaunay`)
+    if ((cache.miniIndexes.length > miniIndexesBefore) || (miniIndexesBefore < 1)) {
+        if (NNDebug) console.log(`didn't skip new Delaunay`)
 
-        miniIndexes = [];
-        let foundMiniCell = aDelaunay.find(x, y, prevFound);
-        prevFound = foundMiniCell;
-        miniIndexes.push(foundMiniCell);
+        cache.miniIndexes = [];
+        let foundMiniCell = aDelaunay.find(x, y, cache.prevFound);
+        cache.prevFound = foundMiniCell;
+        cache.miniIndexes.push(foundMiniCell);
         for (let n of aDelaunay.neighbors(foundMiniCell)) {
-            miniIndexes.push(n);
+            cache.miniIndexes.push(n);
         }
 
-        miniIndexesBefore = miniIndexes.length;
-        if (vorDebug) console.log(`about to enter do while loop`);
+        miniIndexesBefore = cache.miniIndexes.length;
+        if (NNDebug) console.log(`about to enter do while loop`);
         do {
-            miniIndexesBefore = miniIndexes.length;
+            miniIndexesBefore = cache.miniIndexes.length;
             //make mini Voronoi, taking point co-ordinates from main Voronoi plus new inserted point x,y
             let NNPoints = [];
-            for (let c of miniIndexes) {
+            for (let c of cache.miniIndexes) {
                 NNPoints.push(points[c]);
             }
             NNPoints.push([x, y]);
-            insertedDelaunay = Delaunay.from(NNPoints);
+            cache.insertedDelaunay = Delaunay.from(NNPoints);
 
             addNeighborsNeighbors();
 
-        } while (miniIndexes.length > miniIndexesBefore); //loop if new neighbor's neighbors added
+        } while (cache.miniIndexes.length > miniIndexesBefore); //loop if new neighbor's neighbors added
         //If the newly added neighbor's neighbors also turn out to be 1st degree neighbors of inserted cell
         //then their neighbors will be added on the next loop, until no new neighbor's neighbors can be found
-        if (vorDebug) console.log(`done do while loop`);
+        if (NNDebug) console.log(`done do while loop`);
 
-        insertedVoronoi = insertedDelaunay.voronoi(bounds);
+        cache.insertedVoronoi = cache.insertedDelaunay.voronoi(bounds);
         let miniPoints = [];
-        voronoiAreas = [];
-        for (let c of miniIndexes) {
+        cache.voronoiAreas = [];
+        for (let c of cache.miniIndexes) {
             miniPoints.push(points[c]);
         }
         let miniDelaunay = Delaunay.from(miniPoints);
@@ -62,15 +74,15 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
             let miniPolyVor = miniVoronoi.cellPolygon(i);
             miniPolyVor.pop();
             let miniPolyVorArea = polygon.area(miniPolyVor);
-            voronoiAreas.push(miniPolyVorArea);
+            cache.voronoiAreas.push(miniPolyVorArea);
         }
 
-    } else if (vorDebug) console.log(`skipped new Delaunay`);
+    } else if (NNDebug) console.log(`skipped new Delaunay`);
 
-    let insertedPoly = insertedVoronoi.cellPolygon(miniIndexes.length);
+    let insertedPoly = cache.insertedVoronoi.cellPolygon(cache.miniIndexes.length);
 
-    if (vorDebug) console.log(`insertedPoly:`);
-    if (vorDebug) console.log(insertedPoly);
+    if (NNDebug) console.log(`insertedPoly:`);
+    if (NNDebug) console.log(insertedPoly);
 
     let insertionFailed = false;
 
@@ -81,7 +93,7 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
             console.log('undefined');
         }
     } else {
-        if (vorDebug) console.log('!insertedPoly');
+        if (NNDebug) console.log('!insertedPoly');
     }
 
     insertedPoly.pop(); //remove duplicate vertex
@@ -93,26 +105,26 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
     let weightedColor = [0, 0, 0];
     let totalWeight = 0;
 
-    if (vorDebug) console.log('Neighbor loop ahead...');
+    if (NNDebug) console.log('Neighbor loop ahead...');
 
-    for (let n of insertedDelaunay.neighbors(miniIndexes.length)) {
+    for (let n of cache.insertedDelaunay.neighbors(cache.miniIndexes.length)) {
 
-        if (vorDebug) console.log('Neighbor loop starting');
+        if (NNDebug) console.log('Neighbor loop starting');
 
-        if (vorDebug) console.log(`n: `);
-        if (vorDebug) console.log(n);
+        if (NNDebug) console.log(`n: `);
+        if (NNDebug) console.log(n);
 
-        let neighborPolyAfter = insertedVoronoi.cellPolygon(n);
+        let neighborPolyAfter = cache.insertedVoronoi.cellPolygon(n);
 
-        let neighborBeforeArea = voronoiAreas[n];
+        let neighborBeforeArea = cache.voronoiAreas[n];
 
-        if (vorDebug) console.log('   neighborBeforeArea: ' + neighborBeforeArea);
+        if (NNDebug) console.log('   neighborBeforeArea: ' + neighborBeforeArea);
 
         let intersectionArea = 0;
 
         if (neighborPolyAfter) {
             neighborPolyAfter.pop();
-            //faster to compare areas of the reduced polygons in insertedDelaunay with original versions, rather than intersect
+            //faster to compare areas of the reduced polygons in cache.insertedDelaunay with original versions, rather than intersect
             intersectionArea = neighborBeforeArea - polygon.area(neighborPolyAfter);
         }
 
@@ -121,15 +133,15 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
             console.log(`no neighborPolyAfter at neighbor ` + n + ` of ` + x + `,` + y + ` , should be at ` + points[n]);
         }
 
-        if (vorDebug) console.log(`insertedPoly: `);
-        if (vorDebug) console.log(insertedPoly);
-        //if (vorDebug) drawPolygon(insertedPoly);
-        if (vorDebug) console.log('intersectionArea');
+        if (NNDebug) console.log(`insertedPoly: `);
+        if (NNDebug) console.log(insertedPoly);
+        //if (NNDebug) drawPolygon(insertedPoly);
+        if (NNDebug) console.log('intersectionArea');
 
         if (intersectionArea > 0) {
             let relativeWeight = intersectionArea / insertedPolyArea;
-            //n is the neighbor's index in insertedVoronoi, miniIndexes[n] has the index to original colPoints
-            let neighborColor = colPoints[miniIndexes[n]][2];
+            //n is the neighbor's index in insertedVoronoi, cache.miniIndexes[n] has the index to original colPoints
+            let neighborColor = colPoints[cache.miniIndexes[n]][2];
             weightedColor[0] = weightedColor[0] + (neighborColor[0] * relativeWeight);
             weightedColor[1] = weightedColor[1] + (neighborColor[1] * relativeWeight);
             weightedColor[2] = weightedColor[2] + (neighborColor[2] * relativeWeight);
@@ -138,26 +150,26 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
 
         }
 
-        if (vorDebug) console.log('Neighbor loop ending');
+        if (NNDebug) console.log('Neighbor loop ending');
 
     }
 
-    if (vorDebug) console.log('Done neighbor loop');
+    if (NNDebug) console.log('Done neighbor loop');
 
     //if the inserted cell is the same as the original cell, or something else goes wrong, it won't overlap with its neighbors
 
     if (totalWeight < 1.0) {
         const remainingWeight = Math.min(Math.max((1.0 - totalWeight), 0.0), 1.0);
-        let foundCell = aDelaunay.find(x, y, prevFound);
+        let foundCell = aDelaunay.find(x, y, cache.prevFound);
         const originalCellColor = colPoints[foundCell][2];
-        prevFound = foundCell;
+        cache.prevFound = foundCell;
 
         weightedColor[0] = weightedColor[0] + (originalCellColor[0] * remainingWeight);
         weightedColor[1] = weightedColor[1] + (originalCellColor[1] * remainingWeight);
         weightedColor[2] = weightedColor[2] + (originalCellColor[2] * remainingWeight);
     }
 
-    if (vorDebug) {
+    if (NNDebug) {
         if (totalWeight < 0.9) {
             console.log(`position: ` + x + `, ` + y);
             console.log(`insertionFailed:`);
@@ -171,25 +183,18 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
     }
 
 
-    return {
-        NNweightedColor: weightedColor,
-        updatedMiniIndexes: miniIndexes,
-        updatedInsertedDelaunay: insertedDelaunay,
-        updatedInsertedVoronoi: insertedVoronoi,
-        updatedVoronoiAreas: voronoiAreas,
-        updatedPrevFound: prevFound
-    };
+    return weightedColor;
 
     function addNeighborsNeighbors() {
 
-        if (vorDebug) logInsertedDelaunay();
-        //find neighboring cells of inserted cell in insertedDelaunay
-        for (let n of insertedDelaunay.neighbors(miniIndexes.length)) {
+        if (NNDebug) logInsertedDelaunay();
+        //find neighboring cells of inserted cell in cache.insertedDelaunay
+        for (let n of cache.insertedDelaunay.neighbors(cache.miniIndexes.length)) {
             // and add all the neighbor's neighbors from main voronoi to miniIndexes
-            for (let nn of aDelaunay.neighbors(miniIndexes[n])) {
+            for (let nn of aDelaunay.neighbors(cache.miniIndexes[n])) {
                 //...if they haven't been included already
-                if (!miniIndexes.includes(nn)) {
-                    miniIndexes.push(nn);
+                if (!cache.miniIndexes.includes(nn)) {
+                    cache.miniIndexes.push(nn);
                 }
             }
         }
@@ -199,13 +204,12 @@ export function naturalNeighborInterpolate(x, y, miniIndexes, colPoints, points,
         console.log(`aDelaunay.points:`);
         console.log(aDelaunay.points);
         console.log(`miniIndexes :`);
-        console.log(miniIndexes);
-        console.log(`insertedDelaunay.points:`);
-        console.log(insertedDelaunay.points);
+        console.log(cache.miniIndexes);
+        console.log(`cache.insertedDelaunay.points:`);
+        console.log(cache.insertedDelaunay.points);
     }
 
 }
-
 
 
 // export {
