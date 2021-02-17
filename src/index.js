@@ -136,7 +136,7 @@ const sketch = (p) => {
     } else if (p.key === 't') {
       iterativeSubdivision();
     } else if (p.key === 'r') {
-      removalSubdivision();
+      removalRecolor();
     }
 
     //to prevent any default behavior
@@ -387,8 +387,9 @@ const sketch = (p) => {
 
   }
 
-  //TO BE FINISHED
-  function removalSubdivision() {
+  function removalRecolor() {
+
+    console.log("removalRecolor");
 
     //create a copy, which will have original colours
     let colPointsPreRemoval = JSON.parse(JSON.stringify(colPoints));
@@ -399,14 +400,14 @@ const sketch = (p) => {
 
       let colPointsRemoved = [];
 
-      if (colPoints[i][3] == false) {
+      if (colPointsPreRemoval[i][3] == false) {
 
         for (let j = 0; j < colPointsPreRemoval.length; j++) {
-          if (!(j = i)) colPointsRemoved.push(colPointsPreRemoval[i]);
+          if (!(j == i)) colPointsRemoved.push(colPointsPreRemoval[j]);
         }
 
 
-        removalPoints = [];
+        let removalPoints = [];
 
         for (let p = 0; p < colPointsRemoved.length; p++) {
           let inputPoint = colPointsRemoved[p];
@@ -425,15 +426,18 @@ const sketch = (p) => {
 
         //TODO:
         //find colour at location colPoints[i][0], colPoints[i][1]
+        let removalColor = naturalNeighborInterpolate(colPoints[i][0], colPoints[i][1], colPointsRemoved, removalPoints, rDelaunay, bounds);
+
+        colPoints[i][2] = removalColor;
+
+        //console.log("did removal recolor " + i);
 
       }
 
     }
 
 
-
   }
-
 
 
   function clipToBounds(xToClip, yToClip) {
